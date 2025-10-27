@@ -695,6 +695,8 @@ class _SettingsPageState extends State<SettingsPage> {
         _retentionController.text.isEmpty ? '${appState.retentionDays}' : _retentionController.text;
     _selectedMapProvider ??= appState.mapProvider;
     final mapLogs = appState.mapLogs;
+    final bool canExportLogs = appState.mapProvider == MapProvider.tencent;
+    final bool hasLogs = mapLogs.isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
@@ -702,98 +704,113 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
       body: Padding(
         padding: const EdgeInsets.all(24),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              controller: _intervalController,
-              decoration: const InputDecoration(
-                labelText: '采集间隔（秒）',
-                helperText: '允许范围：${SamplingSettings.minInterval} - ${SamplingSettings.maxInterval}',
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              TextField(
+                controller: _intervalController,
+                decoration: const InputDecoration(
+                  labelText: '采集间隔（秒）',
+                  helperText: '允许范围：${SamplingSettings.minInterval} - ${SamplingSettings.maxInterval}',
+                ),
+                keyboardType: TextInputType.number,
               ),
-              keyboardType: TextInputType.number,
-            ),
-            const SizedBox(height: 16),
-            TextField(
-              controller: _retentionController,
-              decoration: const InputDecoration(
-                labelText: '数据保留天数',
-                helperText: '允许范围：${SamplingSettings.minRetentionDays} - ${SamplingSettings.maxRetentionDays}',
+              const SizedBox(height: 16),
+              TextField(
+                controller: _retentionController,
+                decoration: const InputDecoration(
+                  labelText: '数据保留天数',
+                  helperText: '允许范围：${SamplingSettings.minRetentionDays} - ${SamplingSettings.maxRetentionDays}',
+                ),
+                keyboardType: TextInputType.number,
               ),
-              keyboardType: TextInputType.number,
-            ),
-            const SizedBox(height: 16),
-            DropdownButtonFormField<MapProvider>(
-              initialValue: _selectedMapProvider,
-              decoration: const InputDecoration(
-                labelText: '地图提供商',
+              const SizedBox(height: 16),
+              DropdownButtonFormField<MapProvider>(
+                initialValue: _selectedMapProvider,
+                decoration: const InputDecoration(
+                  labelText: '地图提供商',
+                ),
+                items: MapProvider.values
+                    .map(
+                      (provider) => DropdownMenuItem(
+                        value: provider,
+                        child: Text(_mapProviderDisplayName(provider)),
+                      ),
+                    )
+                    .toList(),
+                onChanged: (value) {
+                  if (value == null) {
+                    return;
+                  }
+                  setState(() {
+                    _selectedMapProvider = value;
+                  });
+                },
               ),
-              items: MapProvider.values
-                  .map(
-                    (provider) => DropdownMenuItem(
-                      value: provider,
-                      child: Text(_mapProviderDisplayName(provider)),
+              const SizedBox(height: 28),
+              FilledButton.icon(
+                onPressed: _saving
+                    ? null
+                    : () async {
+                        await _saveSettings(appState);
+                      },
+                icon: _saving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.save_outlined),
+                label: const Text('保存设置'),
+              ),
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                onPressed: _clearing
+                    ? null
+                    : () async {
+                        await _confirmAndClear(appState);
+                      },
+                icon: _clearing
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.delete_outline),
+                label: const Text('清空历史轨迹'),
+              ),
+              if (canExportLogs) ...[
+                const SizedBox(height: 16),
+                FilledButton.icon(
+                  onPressed: !_exporting && hasLogs
+                      ? () async {
+                          await _exportMapLogs(appState, mapLogs);
+                        }
+                      : null,
+                  icon: _exporting
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Icon(Icons.download_outlined),
+                  label: const Text('导出地图日志'),
+                ),
+                if (!hasLogs)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      '暂无腾讯地图日志，请先打开“轨迹”页面等待日志生成。',
+                      style: Theme.of(context)
+                          .textTheme
+                          .bodySmall
+                          ?.copyWith(color: Colors.white70),
                     ),
-                  )
-                  .toList(),
-              onChanged: (value) {
-                if (value == null) {
-                  return;
-                }
-                setState(() {
-                  _selectedMapProvider = value;
-                });
-              },
-            ),
-            const SizedBox(height: 28),
-            FilledButton.icon(
-              onPressed: _saving
-                  ? null
-                  : () async {
-                      await _saveSettings(appState);
-                    },
-              icon: _saving
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.save_outlined),
-              label: const Text('保存设置'),
-            ),
-            const SizedBox(height: 16),
-            OutlinedButton.icon(
-              onPressed: _clearing
-                  ? null
-                  : () async {
-                      await _confirmAndClear(appState);
-                    },
-              icon: _clearing
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.delete_outline),
-              label: const Text('清空历史轨迹'),
-            ),
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: _exporting
-                  ? null
-                  : () async {
-                      await _exportMapLogs(appState, mapLogs);
-                    },
-              icon: _exporting
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.download_outlined),
-              label: const Text('导出地图日志'),
-            ),
-          ],
+                  ),
+              ],
+            ],
+          ),
         ),
       ),
     );
@@ -1040,6 +1057,10 @@ class AppState extends AppStateBase {
       retentionDays: retentionDays,
       mapProvider: mapProvider,
     );
+    final storedLogs = await settingsStore.readMapLogs();
+    if (storedLogs != null && storedLogs.isNotEmpty) {
+      state._mapLogs = storedLogs;
+    }
     await state._loadInitialData();
     return state;
   }
@@ -1170,6 +1191,11 @@ class AppState extends AppStateBase {
   @override
   void cacheMapLogs(List<String> logs) {
     _mapLogs = List<String>.from(logs);
+    if (logs.isEmpty) {
+      _settingsStore.clearMapLogs();
+    } else {
+      _settingsStore.writeMapLogs(_mapLogs);
+    }
     notifyListeners();
   }
 
@@ -1197,6 +1223,9 @@ abstract class SettingsStore {
   Future<void> writeRetentionDays(int days);
   Future<String?> readMapProvider();
   Future<void> writeMapProvider(MapProvider provider);
+  Future<List<String>?> readMapLogs();
+  Future<void> writeMapLogs(List<String> logs);
+  Future<void> clearMapLogs();
 }
 
 class SharedPrefsSettingsStore implements SettingsStore {
@@ -1212,6 +1241,7 @@ class SharedPrefsSettingsStore implements SettingsStore {
   static const _intervalKey = 'sampling_interval_seconds';
   static const _retentionKey = 'retention_days';
   static const _mapProviderKey = 'map_provider';
+  static const _mapLogsKey = 'map_logs';
 
   @override
   Future<int?> readInterval() async => _prefs.getInt(_intervalKey);
@@ -1233,6 +1263,18 @@ class SharedPrefsSettingsStore implements SettingsStore {
   @override
   Future<void> writeMapProvider(MapProvider provider) async =>
       _prefs.setString(_mapProviderKey, _mapProviderToStorage(provider));
+
+  @override
+  Future<List<String>?> readMapLogs() async =>
+      _prefs.getStringList(_mapLogsKey);
+
+  @override
+  Future<void> writeMapLogs(List<String> logs) async =>
+      _prefs.setStringList(_mapLogsKey, logs);
+
+  @override
+  Future<void> clearMapLogs() async =>
+      _prefs.remove(_mapLogsKey);
 }
 
 class TrackRepository {

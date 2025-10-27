@@ -359,17 +359,79 @@ class _InfoRow extends StatelessWidget {
   }
 }
 
-class MapPage extends StatelessWidget {
+class MapPage extends StatefulWidget {
   const MapPage({super.key});
+
+  @override
+  State<MapPage> createState() => _MapPageState();
+}
+
+class _MapPageState extends State<MapPage> {
+  List<String> _mapLogs = const [];
+
+  void _handleLogsUpdated(List<String> logs) {
+    setState(() {
+      _mapLogs = List<String>.from(logs);
+    });
+  }
+
+  Future<void> _exportLogs(AppStateBase appState) async {
+    final directory = await getApplicationDocumentsDirectory();
+    final timestamp =
+        DateTime.now().toIso8601String().replaceAll(':', '-').replaceAll('.', '-');
+    final filePath = path.join(directory.path, 'map_log_$timestamp.txt');
+    final file = File(filePath);
+
+    final buffer = StringBuffer()
+      ..writeln('地图提供商: ${_mapProviderDisplayName(appState.mapProvider)}')
+      ..writeln('记录数量: ${appState.samples.length}')
+      ..writeln('--- 轨迹坐标 ---');
+
+    for (final sample in appState.samples) {
+      buffer.writeln(
+          '${_formatTimestamp(sample.timestamp)} -> (${sample.latitude.toStringAsFixed(6)}, ${sample.longitude.toStringAsFixed(6)})');
+    }
+
+    buffer.writeln('--- 日志 ---');
+    if (_mapLogs.isEmpty) {
+      buffer.writeln('暂无日志');
+    } else {
+      for (final line in _mapLogs) {
+        buffer.writeln(line);
+      }
+    }
+
+    await file.writeAsString(buffer.toString());
+
+    if (!mounted) {
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('日志已导出: $filePath')),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return AppStateBuilder(
       builder: (context, appState) {
         final samples = appState.samples;
+
+        if (appState.mapProvider != MapProvider.tencent && _mapLogs.isNotEmpty) {
+          _mapLogs = const [];
+        }
+
         return Scaffold(
           appBar: AppBar(
             title: const Text('轨迹地图'),
+            actions: [
+              IconButton(
+                tooltip: '导出日志',
+                onPressed: () => _exportLogs(appState),
+                icon: const Icon(Icons.download_outlined),
+              ),
+            ],
           ),
           body: samples.isEmpty
               ? const _EmptyMapState()
@@ -377,7 +439,10 @@ class MapPage extends StatelessWidget {
                   children: [
                     Expanded(
                       child: appState.mapProvider == MapProvider.tencent
-                          ? _TencentMapView(samples: samples)
+                          ? _TencentMapView(
+                              samples: samples,
+                              onLogsUpdated: _handleLogsUpdated,
+                            )
                           : _DefaultMapView(samples: samples),
                     ),
                     Container(
@@ -466,9 +531,13 @@ class _DefaultMapView extends StatelessWidget {
 }
 
 class _TencentMapView extends StatefulWidget {
-  const _TencentMapView({required this.samples});
+  const _TencentMapView({
+    required this.samples,
+    required this.onLogsUpdated,
+  });
 
   final List<LocationSample> samples;
+  final ValueChanged<List<String>> onLogsUpdated;
 
   @override
   State<_TencentMapView> createState() => _TencentMapViewState();
@@ -476,13 +545,20 @@ class _TencentMapView extends StatefulWidget {
 
 class _TencentMapViewState extends State<_TencentMapView> {
   late final WebViewController _controller;
+  final List<String> _logs = [];
 
   @override
   void initState() {
     super.initState();
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(Colors.transparent);
+      ..setBackgroundColor(Colors.transparent)
+      ..addJavaScriptChannel(
+        'LogChannel',
+        onMessageReceived: (message) {
+          _pushLog('[JS] ${message.message}');
+        },
+      );
     _loadContent();
   }
 
@@ -490,8 +566,15 @@ class _TencentMapViewState extends State<_TencentMapView> {
   void didUpdateWidget(covariant _TencentMapView oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!listEquals(oldWidget.samples, widget.samples)) {
+      _pushLog('样本更新：${widget.samples.length} 个点');
       _loadContent();
     }
+  }
+
+  void _pushLog(String message) {
+    final entry = '[${DateTime.now().toIso8601String()}] $message';
+    _logs.add(entry);
+    widget.onLogsUpdated(List<String>.unmodifiable(_logs));
   }
 
   void _loadContent() {
@@ -502,6 +585,7 @@ class _TencentMapViewState extends State<_TencentMapView> {
             })
         .toList();
     if (points.isEmpty) {
+      _pushLog('没有采集点，跳过地图绘制');
       return;
     }
     final pointsJson = jsonEncode(points);
@@ -517,8 +601,20 @@ class _TencentMapViewState extends State<_TencentMapView> {
   </style>
   <script>
     const points = $pointsJson;
-    function initMap() {
+    function log(message) {
+      try {
+        if (window.LogChannel) {
+          window.LogChannel.postMessage(message);
+        }
+      } catch (e) {}
+    }
+    window.onerror = function(message, source, lineno, colno, error) {
+      log('错误: ' + message + ' @ ' + source + ':' + lineno);
+    };
+    window.initMap = function() {
+      log('initMap 调用，点位数量: ' + points.length);
       if (!points || points.length === 0) {
+        log('没有点位，结束绘制');
         return;
       }
       const center = points[points.length - 1];
@@ -528,6 +624,7 @@ class _TencentMapViewState extends State<_TencentMapView> {
       });
 
       const latLngs = points.map(p => new TMap.LatLng(p.lat, p.lng));
+      log('生成 LatLng 数组: ' + latLngs.length);
 
       if (latLngs.length > 1) {
         new TMap.MultiPolyline({
@@ -544,6 +641,9 @@ class _TencentMapViewState extends State<_TencentMapView> {
             }),
           },
         });
+        log('轨迹折线已绘制');
+      } else {
+        log('只有一个点，跳过折线');
       }
 
       new TMap.MultiMarker({
@@ -558,7 +658,8 @@ class _TencentMapViewState extends State<_TencentMapView> {
           { id: 'end', position: latLngs[latLngs.length - 1], styleId: 'end' },
         ],
       });
-    }
+      log('起点终点标记已绘制');
+    };
   </script>
   <script src="https://map.qq.com/api/gljs?v=1.exp&callback=initMap&key=$_tencentMapKey" async defer></script>
 </head>
@@ -569,6 +670,7 @@ class _TencentMapViewState extends State<_TencentMapView> {
 ''';
 
     _controller.loadHtmlString(html);
+    _pushLog('加载腾讯地图页面，点位数量：${points.length}');
   }
 
   @override

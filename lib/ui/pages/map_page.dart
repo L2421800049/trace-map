@@ -9,6 +9,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import '../../core/models/map_provider.dart';
 import '../../core/models/location_sample.dart';
 import '../../core/models/map_log_entry.dart';
+import '../../core/utils/coordinate_transform.dart';
 import '../../core/utils/formatting.dart';
 import '../app_state_scope.dart';
 
@@ -133,6 +134,7 @@ class _TencentMapViewState extends State<_TencentMapView> {
   bool _hasLoadedContent = false;
   bool _pendingUpdate = false;
   String? _latestPointsJson;
+  bool _loggedProjectionHint = false;
 
   @override
   void initState() {
@@ -402,11 +404,23 @@ class _TencentMapViewState extends State<_TencentMapView> {
   }
 
   String _encodePoints(List<LocationSample> samples) {
-    return jsonEncode(
-      samples
-          .map((sample) => {'lat': sample.latitude, 'lng': sample.longitude})
-          .toList(),
-    );
+    final converted = samples.map(_toTencentPoint).toList();
+    return jsonEncode(converted);
+  }
+
+  Map<String, double> _toTencentPoint(LocationSample sample) {
+    final projected = wgs84ToGcj02(sample.latitude, sample.longitude);
+    if (!_loggedProjectionHint) {
+      final latDelta = projected.latitude - sample.latitude;
+      final lonDelta = projected.longitude - sample.longitude;
+      if (latDelta.abs() > 1e-6 || lonDelta.abs() > 1e-6) {
+        _loggedProjectionHint = true;
+        _pushLog(
+          '应用 GCJ-02 转换：Δlat=${latDelta.toStringAsFixed(6)}, Δlng=${lonDelta.toStringAsFixed(6)}',
+        );
+      }
+    }
+    return {'lat': projected.latitude, 'lng': projected.longitude};
   }
 
   void _scheduleMapUpdate() {

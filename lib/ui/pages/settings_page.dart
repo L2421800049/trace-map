@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../../core/app_state.dart';
 import '../../core/models/map_log_entry.dart';
@@ -310,8 +311,9 @@ class _SettingsPageState extends State<SettingsPage> {
         return;
       }
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('日志已导出: $filePath')),
+      await Share.shareXFiles(
+        [XFile(file.path)],
+        text: '地图日志 (${formatTimestamp(DateTime.now())})',
       );
     } finally {
       if (mounted) {

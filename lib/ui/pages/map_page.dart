@@ -261,7 +261,7 @@ class _TencentMapViewState extends State<_TencentMapView> {
       log('起点终点标记已绘制');
     };
   </script>
-  <script src="https://map.qq.com/api/gljs?v=1.exp&callback=initMap&key=$_tencentMapKey" async defer></script>
+  <script src="https://map.qq.com/api/gljs?v=1.exp&callback=initMap&referer=flutter_app&key=$_tencentMapKey" async defer></script>
 </head>
 <body>
   <div id="map"></div>

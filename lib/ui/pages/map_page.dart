@@ -8,6 +8,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import '../../core/models/map_provider.dart';
 import '../../core/models/location_sample.dart';
+import '../../core/models/map_log_entry.dart';
 import '../../core/utils/formatting.dart';
 import '../app_state_scope.dart';
 
@@ -21,24 +22,11 @@ class MapPage extends StatefulWidget {
 }
 
 class _MapPageState extends State<MapPage> {
-  List<String> _mapLogs = const [];
-
-  void _handleLogsUpdated(List<String> logs) {
-    setState(() {
-      _mapLogs = List<String>.from(logs);
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     return AppStateBuilder(
       builder: (context, appState) {
         final samples = appState.samples;
-
-        if (appState.mapProvider != MapProvider.tencent && _mapLogs.isNotEmpty) {
-          _mapLogs = const [];
-          appState.cacheMapLogs(const []);
-        }
 
         return Scaffold(
           appBar: AppBar(
@@ -52,10 +40,7 @@ class _MapPageState extends State<MapPage> {
                       child: appState.mapProvider == MapProvider.tencent
                           ? _TencentMapView(
                               samples: samples,
-                              onLogsUpdated: (logs) {
-                                _handleLogsUpdated(logs);
-                                appState.cacheMapLogs(logs);
-                              },
+                              onLogEntry: appState.addMapLog,
                             )
                           : _DefaultMapView(samples: samples),
                     ),
@@ -147,11 +132,11 @@ class _DefaultMapView extends StatelessWidget {
 class _TencentMapView extends StatefulWidget {
   const _TencentMapView({
     required this.samples,
-    required this.onLogsUpdated,
+    required this.onLogEntry,
   });
 
   final List<LocationSample> samples;
-  final ValueChanged<List<String>> onLogsUpdated;
+  final ValueChanged<MapLogEntry> onLogEntry;
 
   @override
   State<_TencentMapView> createState() => _TencentMapViewState();
@@ -159,7 +144,6 @@ class _TencentMapView extends StatefulWidget {
 
 class _TencentMapViewState extends State<_TencentMapView> {
   late final WebViewController _controller;
-  final List<String> _logs = [];
 
   @override
   void initState() {
@@ -186,9 +170,11 @@ class _TencentMapViewState extends State<_TencentMapView> {
   }
 
   void _pushLog(String message) {
-    final entry = '[${DateTime.now().toIso8601String()}] $message';
-    _logs.add(entry);
-    widget.onLogsUpdated(List<String>.unmodifiable(_logs));
+    final entry = MapLogEntry(
+      timestamp: DateTime.now(),
+      message: message,
+    );
+    widget.onLogEntry(entry);
   }
 
   void _loadContent() {

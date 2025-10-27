@@ -9,9 +9,6 @@ abstract class SettingsStore {
   Future<void> writeRetentionDays(int days);
   Future<String?> readMapProvider();
   Future<void> writeMapProvider(MapProvider provider);
-  Future<List<String>?> readMapLogs();
-  Future<void> writeMapLogs(List<String> logs);
-  Future<void> clearMapLogs();
 }
 
 class SharedPrefsSettingsStore implements SettingsStore {
@@ -27,7 +24,6 @@ class SharedPrefsSettingsStore implements SettingsStore {
   static const _intervalKey = 'sampling_interval_seconds';
   static const _retentionKey = 'retention_days';
   static const _mapProviderKey = 'map_provider';
-  static const _mapLogsKey = 'map_logs';
 
   @override
   Future<int?> readInterval() async => _prefs.getInt(_intervalKey);
@@ -50,14 +46,4 @@ class SharedPrefsSettingsStore implements SettingsStore {
   Future<void> writeMapProvider(MapProvider provider) async =>
       _prefs.setString(_mapProviderKey, mapProviderToStorage(provider));
 
-  @override
-  Future<List<String>?> readMapLogs() async =>
-      _prefs.getStringList(_mapLogsKey);
-
-  @override
-  Future<void> writeMapLogs(List<String> logs) async =>
-      _prefs.setStringList(_mapLogsKey, logs);
-
-  @override
-  Future<void> clearMapLogs() async => _prefs.remove(_mapLogsKey);
 }

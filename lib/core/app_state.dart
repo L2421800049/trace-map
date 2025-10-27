@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'models/device_snapshot.dart';
 import 'models/location_sample.dart';
 import 'models/map_provider.dart';
+import 'models/map_log_entry.dart';
 import 'repositories/device_info_repository.dart';
 import 'repositories/track_repository.dart';
 import 'services/settings_store.dart';
@@ -17,14 +18,14 @@ abstract class AppStateBase extends ChangeNotifier {
   int get samplingIntervalSeconds;
   int get retentionDays;
   MapProvider get mapProvider;
-  UnmodifiableListView<String> get mapLogs;
+  UnmodifiableListView<MapLogEntry> get mapLogs;
 
   Future<void> collectNow();
   Future<void> updateSamplingInterval(int seconds);
   Future<void> updateRetentionDays(int days);
   Future<void> clearHistory();
   Future<void> updateMapProvider(MapProvider provider);
-  void cacheMapLogs(List<String> logs);
+  void addMapLog(MapLogEntry entry);
 }
 
 class AppState extends AppStateBase {
@@ -54,7 +55,7 @@ class AppState extends AppStateBase {
   int _samplingIntervalSeconds;
   int _retentionDays;
   MapProvider _mapProvider;
-  List<String> _mapLogs = const [];
+  List<MapLogEntry> _mapLogs = const [];
 
   static Future<AppState> initialize() async {
     final settingsStore = await SharedPrefsSettingsStore.create();
@@ -77,10 +78,7 @@ class AppState extends AppStateBase {
       mapProvider: mapProvider,
     );
 
-    final storedLogs = await settingsStore.readMapLogs();
-    if (storedLogs != null && storedLogs.isNotEmpty) {
-      state._mapLogs = storedLogs;
-    }
+    state._mapLogs = await trackRepository.fetchMapLogs();
 
     await state._loadInitialData();
     return state;
@@ -195,7 +193,7 @@ class AppState extends AppStateBase {
   MapProvider get mapProvider => _mapProvider;
 
   @override
-  UnmodifiableListView<String> get mapLogs =>
+  UnmodifiableListView<MapLogEntry> get mapLogs =>
       UnmodifiableListView(_mapLogs);
 
   @override
@@ -209,13 +207,9 @@ class AppState extends AppStateBase {
   }
 
   @override
-  void cacheMapLogs(List<String> logs) {
-    _mapLogs = List<String>.from(logs);
-    if (logs.isEmpty) {
-      _settingsStore.clearMapLogs();
-    } else {
-      _settingsStore.writeMapLogs(_mapLogs);
-    }
+  void addMapLog(MapLogEntry entry) {
+    _mapLogs = [..._mapLogs, entry];
+    unawaited(_trackRepository.insertMapLog(entry));
     notifyListeners();
   }
 

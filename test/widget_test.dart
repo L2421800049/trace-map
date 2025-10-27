@@ -7,6 +7,7 @@ import 'package:myapp/core/app_state.dart';
 import 'package:myapp/core/models/device_snapshot.dart';
 import 'package:myapp/core/models/location_sample.dart';
 import 'package:myapp/core/models/map_provider.dart';
+import 'package:myapp/core/models/map_log_entry.dart';
 import 'package:myapp/ui/app_state_scope.dart';
 import 'package:myapp/ui/pages/device_info_page.dart';
 
@@ -86,7 +87,7 @@ class FakeAppState extends AppStateBase {
   int _interval = SamplingSettings.defaultInterval;
   int _retention = SamplingSettings.defaultRetentionDays;
   MapProvider _mapProvider = MapProvider.defaultMap;
-  List<String> _mapLogs = const [];
+  List<MapLogEntry> _mapLogs = const [];
 
   @override
   DeviceSnapshot? get latestSnapshot => _snapshot;
@@ -108,7 +109,7 @@ class FakeAppState extends AppStateBase {
   MapProvider get mapProvider => _mapProvider;
 
   @override
-  UnmodifiableListView<String> get mapLogs =>
+  UnmodifiableListView<MapLogEntry> get mapLogs =>
       UnmodifiableListView(_mapLogs);
 
   @override
@@ -145,8 +146,9 @@ class FakeAppState extends AppStateBase {
   }
 
   @override
-  void cacheMapLogs(List<String> logs) {
-    _mapLogs = List<String>.from(logs);
+  @override
+  void addMapLog(MapLogEntry entry) {
+    _mapLogs = [..._mapLogs, entry];
     notifyListeners();
   }
 }

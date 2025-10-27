@@ -3,6 +3,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../models/location_sample.dart';
+import '../models/map_log_entry.dart';
 
 class TrackRepository {
   TrackRepository._(this._db);
@@ -31,6 +32,22 @@ class TrackRepository {
             heading_accuracy REAL,
             is_mocked INTEGER NOT NULL,
             floor INTEGER
+          )
+        ''');
+        await database.execute('''
+          CREATE TABLE map_logs(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp INTEGER NOT NULL,
+            message TEXT NOT NULL
+          )
+        ''');
+      },
+      onOpen: (database) async {
+        await database.execute('''
+          CREATE TABLE IF NOT EXISTS map_logs(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp INTEGER NOT NULL,
+            message TEXT NOT NULL
           )
         ''');
       },
@@ -67,4 +84,20 @@ class TrackRepository {
   }
 
   Future<void> close() => _db.close();
+
+  Future<void> insertMapLog(MapLogEntry entry) async {
+    await _db.insert('map_logs', entry.toMap());
+  }
+
+  Future<List<MapLogEntry>> fetchMapLogs() async {
+    final rows = await _db.query(
+      'map_logs',
+      orderBy: 'timestamp ASC',
+    );
+    return rows.map((row) => MapLogEntry.fromMap(row)).toList();
+  }
+
+  Future<void> clearMapLogs() async {
+    await _db.delete('map_logs');
+  }
 }

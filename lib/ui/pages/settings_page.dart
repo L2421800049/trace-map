@@ -5,9 +5,11 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 import '../../core/app_state.dart';
+import '../../core/models/map_log_entry.dart';
 import '../../core/models/map_provider.dart';
 import '../../core/utils/formatting.dart';
 import '../app_state_scope.dart';
+import 'log_viewer_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -133,35 +135,49 @@ class _SettingsPageState extends State<SettingsPage> {
                     : const Icon(Icons.delete_outline),
                 label: const Text('清空历史轨迹'),
               ),
-              if (canExportLogs) ...[
-                const SizedBox(height: 16),
-                FilledButton.icon(
-                  onPressed: _exporting || !hasLogs
-                      ? null
-                      : () async {
-                          await _exportMapLogs(appState, mapLogs);
-                        },
-                  icon: _exporting
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.download_outlined),
-                  label: const Text('导出地图日志'),
-                ),
-                if (!hasLogs)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 8),
-                    child: Text(
-                      '暂无腾讯地图日志，请先打开“轨迹”页面等待日志生成。',
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: Colors.white70),
-                    ),
+              const SizedBox(height: 16),
+              FilledButton.icon(
+                onPressed: _exporting || !hasLogs
+                    ? null
+                    : () async {
+                        await _exportMapLogs(appState, mapLogs);
+                      },
+                icon: _exporting
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.download_outlined),
+                label: const Text('导出地图日志'),
+              ),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: hasLogs
+                    ? () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const LogViewerPage(),
+                          ),
+                        );
+                      }
+                    : null,
+                icon: const Icon(Icons.list_alt_outlined),
+                label: const Text('查看地图日志'),
+              ),
+              if (!hasLogs)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(
+                    canExportLogs
+                        ? '暂无腾讯地图日志，请先打开“轨迹”页面等待日志生成。'
+                        : '当前使用默认地图，切换为腾讯地图后即可记录日志。',
+                    style: Theme.of(context)
+                        .textTheme
+                        .bodySmall
+                        ?.copyWith(color: Colors.white70),
                   ),
-              ],
+                ),
             ],
           ),
         ),
@@ -260,7 +276,7 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  Future<void> _exportMapLogs(AppStateBase appState, List<String> logs) async {
+  Future<void> _exportMapLogs(AppStateBase appState, List<MapLogEntry> logs) async {
     setState(() => _exporting = true);
     final directory = await getApplicationDocumentsDirectory();
     final timestamp =
@@ -282,8 +298,8 @@ class _SettingsPageState extends State<SettingsPage> {
     if (logs.isEmpty) {
       buffer.writeln('暂无日志');
     } else {
-      for (final line in logs) {
-        buffer.writeln(line);
+      for (final entry in logs) {
+        buffer.writeln('${formatTimestamp(entry.timestamp)} -> ${entry.message}');
       }
     }
 

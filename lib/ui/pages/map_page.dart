@@ -13,6 +13,7 @@ import '../../core/utils/formatting.dart';
 import '../app_state_scope.dart';
 
 const _tencentMapKey = '5KABZ-2CCKL-3OUPE-ELJNN-SUT4J-OZBRY';
+const _tencentMapBaseUrl = 'https://tencent-map.flutter-app.local/';
 
 class MapPage extends StatefulWidget {
   const MapPage({super.key});
@@ -211,6 +212,10 @@ class _TencentMapViewState extends State<_TencentMapView> {
     window.onerror = function(message, source, lineno, colno, error) {
       log('错误: ' + message + ' @ ' + source + ':' + lineno);
     };
+    window.addEventListener('unhandledrejection', function(event) {
+      log('未处理的 Promise 拒绝: ' + event.reason);
+    });
+    log('页面 origin: ' + window.location.origin + ', href: ' + window.location.href);
     window.initMap = function() {
       log('initMap 调用，点位数量: ' + points.length);
       if (!points || points.length === 0) {
@@ -269,7 +274,10 @@ class _TencentMapViewState extends State<_TencentMapView> {
 </html>
 ''';
 
-    _controller.loadHtmlString(html);
+    _controller.loadHtmlString(
+      html,
+      baseUrl: _tencentMapBaseUrl,
+    );
     _pushLog('加载腾讯地图页面，点位数量：${points.length}');
   }
 

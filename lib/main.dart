@@ -515,48 +515,55 @@ class _TencentMapViewState extends State<_TencentMapView> {
     html, body { margin: 0; padding: 0; height: 100%; background: #121212; }
     #map { width: 100%; height: 100%; }
   </style>
-  <script src="https://map.qq.com/api/gljs?v=1.exp&key=$_tencentMapKey"></script>
+  <script>
+    const points = $pointsJson;
+    function initMap() {
+      if (!points || points.length === 0) {
+        return;
+      }
+      const center = points[points.length - 1];
+      const map = new TMap.Map('map', {
+        center: new TMap.LatLng(center.lat, center.lng),
+        zoom: 16,
+      });
+
+      const latLngs = points.map(p => new TMap.LatLng(p.lat, p.lng));
+
+      if (latLngs.length > 1) {
+        new TMap.MultiPolyline({
+          id: 'track',
+          map,
+          geometries: [{
+            paths: latLngs,
+            styleId: 'track_style',
+          }],
+          styles: {
+            track_style: new TMap.PolylineStyle({
+              color: '#64B5F6',
+              width: 6,
+            }),
+          },
+        });
+      }
+
+      new TMap.MultiMarker({
+        id: 'markers',
+        map,
+        styles: {
+          start: new TMap.MarkerStyle({ width: 30, height: 42, src: 'https://mapapi.qq.com/web/miniprogram/demoCenter/images/marker-start.png' }),
+          end: new TMap.MarkerStyle({ width: 30, height: 42, src: 'https://mapapi.qq.com/web/miniprogram/demoCenter/images/marker-end.png' }),
+        },
+        geometries: [
+          { id: 'start', position: latLngs[0], styleId: 'start' },
+          { id: 'end', position: latLngs[latLngs.length - 1], styleId: 'end' },
+        ],
+      });
+    }
+  </script>
+  <script src="https://map.qq.com/api/gljs?v=1.exp&callback=initMap&key=$_tencentMapKey" async defer></script>
 </head>
 <body>
   <div id="map"></div>
-  <script>
-    const points = $pointsJson;
-    const center = points[points.length - 1];
-    const map = new TMap.Map('map', {
-      center: new TMap.LatLng(center.lat, center.lng),
-      zoom: 16,
-    });
-
-    const latLngs = points.map(p => new TMap.LatLng(p.lat, p.lng));
-
-    new TMap.MultiPolyline({
-      id: 'track',
-      map,
-      geometries: [{
-        paths: latLngs,
-        styleId: 'track_style',
-      }],
-      styles: {
-        track_style: new TMap.PolylineStyle({
-          color: '#64B5F6',
-          width: 6,
-        }),
-      },
-    });
-
-    new TMap.MultiMarker({
-      id: 'markers',
-      map,
-      styles: {
-        start: new TMap.MarkerStyle({ width: 30, height: 42, src: 'https://mapapi.qq.com/web/miniprogram/demoCenter/images/marker-start.png' }),
-        end: new TMap.MarkerStyle({ width: 30, height: 42, src: 'https://mapapi.qq.com/web/miniprogram/demoCenter/images/marker-end.png' }),
-      },
-      geometries: [
-        { id: 'start', position: latLngs[0], styleId: 'start' },
-        { id: 'end', position: latLngs[latLngs.length - 1], styleId: 'end' },
-      ],
-    });
-  </script>
 </body>
 </html>
 ''';

@@ -1,27 +1,44 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:convert';
 import 'dart:io';
 
-import 'package:amap_flutter_base/amap_flutter_base.dart';
-import 'package:amap_flutter_map/amap_flutter_map.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
+import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:latlong2/latlong.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
-const _amapAndroidKey = 'fcc94241be73658fe06c71b535485747';
-const AMapApiKey _amapApiKeys = AMapApiKey(
-  androidKey: _amapAndroidKey,
-  iosKey: '',
-);
-const AMapPrivacyStatement _amapPrivacyAgreement = AMapPrivacyStatement(
-  hasContains: true,
-  hasShow: true,
-  hasAgree: true,
-);
+const _tencentMapKey = '5KABZ-2CCKL-3OUPE-ELJNN-SUT4J-OZBRY';
+
+enum MapProvider {
+  defaultMap,
+  tencent,
+}
+
+String _mapProviderToStorage(MapProvider provider) => provider.name;
+
+MapProvider _mapProviderFromStorage(String? value) {
+  if (value == 'tencent') {
+    return MapProvider.tencent;
+  }
+  return MapProvider.defaultMap;
+}
+
+String _mapProviderDisplayName(MapProvider provider) {
+  switch (provider) {
+    case MapProvider.tencent:
+      return '腾讯地图';
+    case MapProvider.defaultMap:
+      return '默认地图';
+  }
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -359,9 +376,9 @@ class MapPage extends StatelessWidget {
               : Column(
                   children: [
                     Expanded(
-                      child: _AmapTrackView(
-                        samples: samples,
-                      ),
+                      child: appState.mapProvider == MapProvider.tencent
+                          ? _TencentMapView(samples: samples)
+                          : _DefaultMapView(samples: samples),
                     ),
                     Container(
                       width: double.infinity,
@@ -387,53 +404,169 @@ class MapPage extends StatelessWidget {
   }
 }
 
-class _AmapTrackView extends StatelessWidget {
-  const _AmapTrackView({required this.samples});
+class _DefaultMapView extends StatelessWidget {
+  const _DefaultMapView({required this.samples});
 
   final List<LocationSample> samples;
 
   @override
   Widget build(BuildContext context) {
-    AMapUtil.init(context);
     final points = samples
         .map(
           (sample) => LatLng(sample.latitude, sample.longitude),
         )
         .toList();
 
-    final markers = <Marker>{
-      Marker(
-        position: points.first,
-        infoWindow: const InfoWindow(title: '起点'),
-        icon: BitmapDescriptor.defaultMarkerWithHue(
-          BitmapDescriptor.hueGreen,
-        ),
-      ),
-      Marker(
-        position: points.last,
-        infoWindow: const InfoWindow(title: '终点'),
-        icon: BitmapDescriptor.defaultMarkerWithHue(
-          BitmapDescriptor.hueRed,
-        ),
-      ),
-    };
-
     final polyline = Polyline(
-      width: 6,
-      color: Colors.lightBlueAccent,
       points: points,
+      color: Colors.lightBlueAccent,
+      strokeWidth: 4,
     );
 
-    return AMapWidget(
-      apiKey: _amapApiKeys,
-      privacyStatement: _amapPrivacyAgreement,
-      initialCameraPosition: CameraPosition(
-        target: points.last,
-        zoom: 16,
+    return FlutterMap(
+      options: MapOptions(
+        initialCenter: points.last,
+        initialZoom: 16,
       ),
-      markers: markers,
-      polylines: {polyline},
+      children: [
+        TileLayer(
+          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          userAgentPackageName: 'com.example.myapp',
+        ),
+        PolylineLayer(
+          polylines: [polyline],
+        ),
+        MarkerLayer(
+          markers: [
+            Marker(
+              point: points.first,
+              width: 40,
+              height: 40,
+              child: const Icon(
+                Icons.flag,
+                color: Colors.greenAccent,
+                size: 30,
+              ),
+            ),
+            Marker(
+              point: points.last,
+              width: 40,
+              height: 40,
+              child: const Icon(
+                Icons.place,
+                color: Colors.redAccent,
+                size: 34,
+              ),
+            ),
+          ],
+        ),
+      ],
     );
+  }
+}
+
+class _TencentMapView extends StatefulWidget {
+  const _TencentMapView({required this.samples});
+
+  final List<LocationSample> samples;
+
+  @override
+  State<_TencentMapView> createState() => _TencentMapViewState();
+}
+
+class _TencentMapViewState extends State<_TencentMapView> {
+  late final WebViewController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..setBackgroundColor(Colors.transparent);
+    _loadContent();
+  }
+
+  @override
+  void didUpdateWidget(covariant _TencentMapView oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!listEquals(oldWidget.samples, widget.samples)) {
+      _loadContent();
+    }
+  }
+
+  void _loadContent() {
+    final points = widget.samples
+        .map((sample) => {
+              'lat': sample.latitude,
+              'lng': sample.longitude,
+            })
+        .toList();
+    if (points.isEmpty) {
+      return;
+    }
+    final pointsJson = jsonEncode(points);
+    final html = '''
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; background: #121212; }
+    #map { width: 100%; height: 100%; }
+  </style>
+  <script src="https://map.qq.com/api/gljs?v=1.exp&key=$_tencentMapKey"></script>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    const points = $pointsJson;
+    const center = points[points.length - 1];
+    const map = new TMap.Map('map', {
+      center: new TMap.LatLng(center.lat, center.lng),
+      zoom: 16,
+    });
+
+    const latLngs = points.map(p => new TMap.LatLng(p.lat, p.lng));
+
+    new TMap.MultiPolyline({
+      id: 'track',
+      map,
+      geometries: [{
+        paths: latLngs,
+        styleId: 'track_style',
+      }],
+      styles: {
+        track_style: new TMap.PolylineStyle({
+          color: '#64B5F6',
+          width: 6,
+        }),
+      },
+    });
+
+    new TMap.MultiMarker({
+      id: 'markers',
+      map,
+      styles: {
+        start: new TMap.MarkerStyle({ width: 30, height: 42, src: 'https://mapapi.qq.com/web/miniprogram/demoCenter/images/marker-start.png' }),
+        end: new TMap.MarkerStyle({ width: 30, height: 42, src: 'https://mapapi.qq.com/web/miniprogram/demoCenter/images/marker-end.png' }),
+      },
+      geometries: [
+        { id: 'start', position: latLngs[0], styleId: 'start' },
+        { id: 'end', position: latLngs[latLngs.length - 1], styleId: 'end' },
+      ],
+    });
+  </script>
+</body>
+</html>
+''';
+
+    _controller.loadHtmlString(html);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return WebViewWidget(controller: _controller);
   }
 }
 
@@ -467,6 +600,7 @@ class _SettingsPageState extends State<SettingsPage> {
   late final TextEditingController _retentionController;
   bool _saving = false;
   bool _clearing = false;
+  MapProvider? _selectedMapProvider;
 
   @override
   void initState() {
@@ -489,6 +623,7 @@ class _SettingsPageState extends State<SettingsPage> {
         _intervalController.text.isEmpty ? '${appState.samplingIntervalSeconds}' : _intervalController.text;
     _retentionController.text =
         _retentionController.text.isEmpty ? '${appState.retentionDays}' : _retentionController.text;
+    _selectedMapProvider ??= appState.mapProvider;
 
     return Scaffold(
       appBar: AppBar(
@@ -515,6 +650,29 @@ class _SettingsPageState extends State<SettingsPage> {
                 helperText: '允许范围：${SamplingSettings.minRetentionDays} - ${SamplingSettings.maxRetentionDays}',
               ),
               keyboardType: TextInputType.number,
+            ),
+            const SizedBox(height: 16),
+            DropdownButtonFormField<MapProvider>(
+              initialValue: _selectedMapProvider,
+              decoration: const InputDecoration(
+                labelText: '地图提供商',
+              ),
+              items: MapProvider.values
+                  .map(
+                    (provider) => DropdownMenuItem(
+                      value: provider,
+                      child: Text(_mapProviderDisplayName(provider)),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value == null) {
+                  return;
+                }
+                setState(() {
+                  _selectedMapProvider = value;
+                });
+              },
             ),
             const SizedBox(height: 28),
             FilledButton.icon(
@@ -584,12 +742,15 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       final intervalValue = interval!;
       final retentionValue = retention!;
+      final providerValue = _selectedMapProvider ?? appState.mapProvider;
 
       await appState.updateSamplingInterval(intervalValue);
       await appState.updateRetentionDays(retentionValue);
+      await appState.updateMapProvider(providerValue);
       if (mounted) {
         _intervalController.text = '$intervalValue';
         _retentionController.text = '$retentionValue';
+        _selectedMapProvider = providerValue;
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('设置已保存')),
         );
@@ -688,11 +849,13 @@ abstract class AppStateBase extends ChangeNotifier {
   bool get isCollecting;
   int get samplingIntervalSeconds;
   int get retentionDays;
+  MapProvider get mapProvider;
 
   Future<void> collectNow();
   Future<void> updateSamplingInterval(int seconds);
   Future<void> updateRetentionDays(int days);
   Future<void> clearHistory();
+  Future<void> updateMapProvider(MapProvider provider);
 }
 
 class AppState extends AppStateBase {
@@ -702,11 +865,13 @@ class AppState extends AppStateBase {
     required DeviceInfoRepository deviceRepository,
     required int samplingIntervalSeconds,
     required int retentionDays,
+    required MapProvider mapProvider,
   })  : _settingsStore = settingsStore,
         _trackRepository = trackRepository,
         _deviceRepository = deviceRepository,
         _samplingIntervalSeconds = samplingIntervalSeconds,
-        _retentionDays = retentionDays;
+        _retentionDays = retentionDays,
+        _mapProvider = mapProvider;
 
   final SettingsStore _settingsStore;
   final TrackRepository _trackRepository;
@@ -719,6 +884,7 @@ class AppState extends AppStateBase {
 
   int _samplingIntervalSeconds;
   int _retentionDays;
+  MapProvider _mapProvider;
 
   static Future<AppState> initialize() async {
     final settingsStore = await SharedPrefsSettingsStore.create();
@@ -729,6 +895,8 @@ class AppState extends AppStateBase {
         await settingsStore.readInterval() ?? SamplingSettings.defaultInterval;
     final retentionDays = await settingsStore.readRetentionDays() ??
         SamplingSettings.defaultRetentionDays;
+    final mapProvider =
+        _mapProviderFromStorage(await settingsStore.readMapProvider());
 
     final state = AppState._(
       settingsStore: settingsStore,
@@ -736,6 +904,7 @@ class AppState extends AppStateBase {
       deviceRepository: deviceRepository,
       samplingIntervalSeconds: samplingInterval,
       retentionDays: retentionDays,
+      mapProvider: mapProvider,
     );
     await state._loadInitialData();
     return state;
@@ -848,6 +1017,19 @@ class AppState extends AppStateBase {
   int get retentionDays => _retentionDays;
 
   @override
+  MapProvider get mapProvider => _mapProvider;
+
+  @override
+  Future<void> updateMapProvider(MapProvider provider) async {
+    if (provider == _mapProvider) {
+      return;
+    }
+    _mapProvider = provider;
+    await _settingsStore.writeMapProvider(provider);
+    notifyListeners();
+  }
+
+  @override
   void dispose() {
     _timer?.cancel();
     unawaited(_trackRepository.close());
@@ -869,6 +1051,8 @@ abstract class SettingsStore {
   Future<void> writeInterval(int seconds);
   Future<int?> readRetentionDays();
   Future<void> writeRetentionDays(int days);
+  Future<String?> readMapProvider();
+  Future<void> writeMapProvider(MapProvider provider);
 }
 
 class SharedPrefsSettingsStore implements SettingsStore {
@@ -883,6 +1067,7 @@ class SharedPrefsSettingsStore implements SettingsStore {
 
   static const _intervalKey = 'sampling_interval_seconds';
   static const _retentionKey = 'retention_days';
+  static const _mapProviderKey = 'map_provider';
 
   @override
   Future<int?> readInterval() async => _prefs.getInt(_intervalKey);
@@ -897,6 +1082,13 @@ class SharedPrefsSettingsStore implements SettingsStore {
   @override
   Future<void> writeRetentionDays(int days) async =>
       _prefs.setInt(_retentionKey, days);
+
+  @override
+  Future<String?> readMapProvider() async => _prefs.getString(_mapProviderKey);
+
+  @override
+  Future<void> writeMapProvider(MapProvider provider) async =>
+      _prefs.setString(_mapProviderKey, _mapProviderToStorage(provider));
 }
 
 class TrackRepository {

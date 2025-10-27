@@ -80,6 +80,7 @@ class FakeAppState extends AppStateBase {
   bool _collecting = false;
   int _interval = SamplingSettings.defaultInterval;
   int _retention = SamplingSettings.defaultRetentionDays;
+  MapProvider _mapProvider = MapProvider.defaultMap;
 
   @override
   DeviceSnapshot? get latestSnapshot => _snapshot;
@@ -96,6 +97,9 @@ class FakeAppState extends AppStateBase {
 
   @override
   int get retentionDays => _retention;
+
+  @override
+  MapProvider get mapProvider => _mapProvider;
 
   @override
   Future<void> collectNow() async {
@@ -121,6 +125,12 @@ class FakeAppState extends AppStateBase {
   @override
   Future<void> clearHistory() async {
     _samples = [];
+    notifyListeners();
+  }
+
+  @override
+  Future<void> updateMapProvider(MapProvider provider) async {
+    _mapProvider = provider;
     notifyListeners();
   }
 }

@@ -6,9 +6,6 @@
         android:label="myapp"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
-        <meta-data
-            android:name="com.amap.api.v2.apikey"
-            android:value="fcc94241be73658fe06c71b535485747" />
         <activity
             android:name=".MainActivity"
             android:exported="true"

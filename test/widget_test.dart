@@ -1,9 +1,4 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
+import 'dart:collection';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,49 +6,115 @@ import 'package:geolocator/geolocator.dart';
 import 'package:myapp/main.dart';
 
 void main() {
-  testWidgets('Device info page renders provided details',
-      (WidgetTester tester) async {
-    final repository = _FakeRepository();
+  testWidgets('Device info page renders snapshot details', (WidgetTester tester) async {
+    final sample = LocationSample(
+      timestamp: DateTime(2024, 1, 1, 12, 0, 0),
+      latitude: 39.9075,
+      longitude: 116.3913,
+      accuracy: 5,
+      altitude: 45,
+      altitudeAccuracy: 0,
+      speed: 0,
+      speedAccuracy: 0,
+      heading: 0,
+      headingAccuracy: 0,
+      isMocked: false,
+    );
+
+    final snapshot = DeviceSnapshot(
+      deviceDetails: const {
+        '系统': 'Android 14',
+        '品牌': 'Google',
+        '型号': 'Pixel',
+      },
+      position: Position(
+        longitude: sample.longitude,
+        latitude: sample.latitude,
+        timestamp: sample.timestamp,
+        accuracy: sample.accuracy,
+        altitude: sample.altitude,
+        altitudeAccuracy: sample.altitudeAccuracy,
+        heading: sample.heading,
+        headingAccuracy: sample.headingAccuracy,
+        speed: sample.speed,
+        speedAccuracy: sample.speedAccuracy,
+        isMocked: sample.isMocked,
+      ),
+      locationError: null,
+      retrievedAt: sample.timestamp,
+    );
+
+    final fakeState = FakeAppState(
+      snapshot: snapshot,
+      samples: [sample],
+    );
 
     await tester.pumpWidget(
-      MaterialApp(
-        home: DeviceInfoPage(repository: repository),
+      AppStateScope(
+        notifier: fakeState,
+        child: const MaterialApp(
+          home: DeviceInfoPage(),
+        ),
       ),
     );
 
     await tester.pumpAndSettle();
 
     expect(find.text('设备信息'), findsOneWidget);
+    expect(find.textContaining('品牌: Google'), findsOneWidget);
     expect(find.textContaining('型号: Pixel'), findsOneWidget);
-    expect(find.textContaining('纬度'), findsOneWidget);
-    expect(find.textContaining('更新时间'), findsOneWidget);
+    expect(find.textContaining('纬度'), findsWidgets);
+    expect(find.textContaining('采集周期'), findsOneWidget);
   });
 }
 
-class _FakeRepository extends DeviceInfoRepository {
+class FakeAppState extends AppStateBase {
+  FakeAppState({
+    required DeviceSnapshot snapshot,
+    required List<LocationSample> samples,
+  })  : _snapshot = snapshot,
+        _samples = samples;
+
+  final DeviceSnapshot? _snapshot;
+  final List<LocationSample> _samples;
+  bool _collecting = false;
+  int _interval = SamplingSettings.defaultInterval;
+  int _retention = SamplingSettings.defaultRetentionDays;
+
   @override
-  Future<DeviceSnapshot> fetchInfo() async {
-    return DeviceSnapshot(
-      deviceDetails: {
-        '系统': 'Android 14',
-        '品牌': 'Google',
-        '型号': 'Pixel',
-      },
-      position: Position(
-        longitude: 116.3913,
-        latitude: 39.9075,
-        timestamp: DateTime(2024, 1, 1, 12, 0, 0),
-        accuracy: 5.0,
-        altitude: 45.0,
-        heading: 0.0,
-        speed: 0.0,
-        speedAccuracy: 0.0,
-        headingAccuracy: 0.0,
-        altitudeAccuracy: 0.0,
-        isMocked: false,
-      ),
-      locationError: null,
-      retrievedAt: DateTime(2024, 1, 1, 12, 0, 5),
-    );
+  DeviceSnapshot? get latestSnapshot => _snapshot;
+
+  @override
+  UnmodifiableListView<LocationSample> get samples =>
+      UnmodifiableListView(_samples);
+
+  @override
+  bool get isCollecting => _collecting;
+
+  @override
+  int get samplingIntervalSeconds => _interval;
+
+  @override
+  int get retentionDays => _retention;
+
+  @override
+  Future<void> collectNow() async {
+    _collecting = true;
+    notifyListeners();
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+    _collecting = false;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> updateSamplingInterval(int seconds) async {
+    _interval = seconds;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> updateRetentionDays(int days) async {
+    _retention = days;
+    notifyListeners();
   }
 }

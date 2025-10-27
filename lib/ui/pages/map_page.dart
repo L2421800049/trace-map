@@ -30,9 +30,7 @@ class _MapPageState extends State<MapPage> {
         final samples = appState.samples;
 
         return Scaffold(
-          appBar: AppBar(
-            title: const Text('轨迹地图'),
-          ),
+          appBar: AppBar(title: const Text('轨迹地图')),
           body: samples.isEmpty
               ? const _EmptyMapState()
               : Column(
@@ -77,9 +75,7 @@ class _DefaultMapView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final points = samples
-        .map(
-          (sample) => LatLng(sample.latitude, sample.longitude),
-        )
+        .map((sample) => LatLng(sample.latitude, sample.longitude))
         .toList();
 
     final polyline = Polyline(
@@ -89,18 +85,13 @@ class _DefaultMapView extends StatelessWidget {
     );
 
     return FlutterMap(
-      options: MapOptions(
-        initialCenter: points.last,
-        initialZoom: 16,
-      ),
+      options: MapOptions(initialCenter: points.last, initialZoom: 16),
       children: [
         TileLayer(
           urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
           userAgentPackageName: 'com.example.myapp',
         ),
-        PolylineLayer(
-          polylines: [polyline],
-        ),
+        PolylineLayer(polylines: [polyline]),
         MarkerLayer(
           markers: [
             Marker(
@@ -117,11 +108,7 @@ class _DefaultMapView extends StatelessWidget {
               point: points.last,
               width: 40,
               height: 40,
-              child: const Icon(
-                Icons.place,
-                color: Colors.redAccent,
-                size: 34,
-              ),
+              child: const Icon(Icons.place, color: Colors.redAccent, size: 34),
             ),
           ],
         ),
@@ -131,10 +118,7 @@ class _DefaultMapView extends StatelessWidget {
 }
 
 class _TencentMapView extends StatefulWidget {
-  const _TencentMapView({
-    required this.samples,
-    required this.onLogEntry,
-  });
+  const _TencentMapView({required this.samples, required this.onLogEntry});
 
   final List<LocationSample> samples;
   final ValueChanged<MapLogEntry> onLogEntry;
@@ -145,6 +129,10 @@ class _TencentMapView extends StatefulWidget {
 
 class _TencentMapViewState extends State<_TencentMapView> {
   late final WebViewController _controller;
+  bool _pageReady = false;
+  bool _hasLoadedContent = false;
+  bool _pendingUpdate = false;
+  String? _latestPointsJson;
 
   @override
   void initState() {
@@ -155,10 +143,10 @@ class _TencentMapViewState extends State<_TencentMapView> {
       ..addJavaScriptChannel(
         'LogChannel',
         onMessageReceived: (message) {
-          _pushLog('[JS] ${message.message}');
+          _handleJavaScriptMessage(message.message);
         },
       );
-    _loadContent();
+    _loadInitialContent(widget.samples);
   }
 
   @override
@@ -166,31 +154,33 @@ class _TencentMapViewState extends State<_TencentMapView> {
     super.didUpdateWidget(oldWidget);
     if (!listEquals(oldWidget.samples, widget.samples)) {
       _pushLog('样本更新：${widget.samples.length} 个点');
-      _loadContent();
+      _latestPointsJson = _encodePoints(widget.samples);
+      _scheduleMapUpdate();
     }
+  }
+
+  void _handleJavaScriptMessage(String rawMessage) {
+    if (rawMessage == '__READY__') {
+      _pageReady = true;
+      _pushLog('腾讯地图页面就绪');
+      _flushPendingUpdate();
+      return;
+    }
+    _pushLog('[JS] $rawMessage');
   }
 
   void _pushLog(String message) {
-    final entry = MapLogEntry(
-      timestamp: DateTime.now(),
-      message: message,
-    );
+    final entry = MapLogEntry(timestamp: DateTime.now(), message: message);
     widget.onLogEntry(entry);
   }
 
-  void _loadContent() {
-    final points = widget.samples
-        .map((sample) => {
-              'lat': sample.latitude,
-              'lng': sample.longitude,
-            })
-        .toList();
-    if (points.isEmpty) {
-      _pushLog('没有采集点，跳过地图绘制');
-      return;
-    }
-    final pointsJson = jsonEncode(points);
-    final html = '''
+  void _loadInitialContent(List<LocationSample> samples) {
+    final pointsJson = _encodePoints(samples);
+    _latestPointsJson = pointsJson;
+    _pageReady = false;
+    _pendingUpdate = true;
+    final html =
+        '''
 <!DOCTYPE html>
 <html>
 <head>
@@ -201,7 +191,13 @@ class _TencentMapViewState extends State<_TencentMapView> {
     #map { width: 100%; height: 100%; }
   </style>
   <script>
-    const points = $pointsJson;
+    const DEFAULT_CENTER = { lat: 39.909187, lng: 116.397451 };
+    const DEFAULT_ZOOM = 16;
+    let points = $pointsJson;
+    let map = null;
+    let trackPolyline = null;
+    let markerLayer = null;
+
     function log(message) {
       try {
         if (window.LogChannel) {
@@ -216,54 +212,180 @@ class _TencentMapViewState extends State<_TencentMapView> {
       log('未处理的 Promise 拒绝: ' + event.reason);
     });
     log('页面 origin: ' + window.location.origin + ', href: ' + window.location.href);
-    window.initMap = function() {
-      log('initMap 调用，点位数量: ' + points.length);
-      if (!points || points.length === 0) {
-        log('没有点位，结束绘制');
+
+    function createLatLng(point) {
+      return new TMap.LatLng(point.lat, point.lng);
+    }
+
+    function ensureMapCentered(point) {
+      const target = point || DEFAULT_CENTER;
+      if (!map) {
+        map = new TMap.Map('map', {
+          center: createLatLng(target),
+          zoom: DEFAULT_ZOOM,
+        });
         return;
       }
-      const center = points[points.length - 1];
-      const map = new TMap.Map('map', {
-        center: new TMap.LatLng(center.lat, center.lng),
-        zoom: 16,
-      });
-
-      const latLngs = points.map(p => new TMap.LatLng(p.lat, p.lng));
-      log('生成 LatLng 数组: ' + latLngs.length);
-
-      if (latLngs.length > 1) {
-        new TMap.MultiPolyline({
-          id: 'track',
-          map,
-          geometries: [{
-            paths: latLngs,
-            styleId: 'track_style',
-          }],
-          styles: {
-            track_style: new TMap.PolylineStyle({
-              color: '#64B5F6',
-              width: 6,
-            }),
-          },
-        });
-        log('轨迹折线已绘制');
-      } else {
-        log('只有一个点，跳过折线');
+      try {
+        map.setCenter(createLatLng(target));
+      } catch (err) {
+        log('设置中心点失败: ' + err);
       }
+    }
 
-      new TMap.MultiMarker({
+    function clearPolyline() {
+      if (!trackPolyline) {
+        return;
+      }
+      if (typeof trackPolyline.setGeometries === 'function') {
+        trackPolyline.setGeometries([]);
+        return;
+      }
+      if (typeof trackPolyline.setMap === 'function') {
+        try {
+          trackPolyline.setMap(null);
+        } catch (err) {
+          log('清理折线失败: ' + err);
+        }
+      }
+      trackPolyline = null;
+    }
+
+    function clearMarkers() {
+      if (!markerLayer) {
+        return;
+      }
+      if (typeof markerLayer.setGeometries === 'function') {
+        markerLayer.setGeometries([]);
+        return;
+      }
+      if (typeof markerLayer.setMap === 'function') {
+        try {
+          markerLayer.setMap(null);
+        } catch (err) {
+          log('清理标记失败: ' + err);
+        }
+      }
+      markerLayer = null;
+    }
+
+    function updatePolyline(latLngs) {
+      if (latLngs.length < 2) {
+        clearPolyline();
+        log('只有一个点，跳过折线');
+        return;
+      }
+      const geometries = [{
+        paths: latLngs,
+        styleId: 'track_style',
+      }];
+      if (trackPolyline && typeof trackPolyline.setGeometries === 'function') {
+        trackPolyline.setGeometries(geometries);
+        log('轨迹折线已更新');
+        return;
+      }
+      if (trackPolyline && typeof trackPolyline.setMap === 'function') {
+        try {
+          trackPolyline.setMap(null);
+        } catch (err) {
+          log('移除旧折线失败: ' + err);
+        }
+      }
+      trackPolyline = new TMap.MultiPolyline({
+        id: 'track',
+        map,
+        geometries,
+        styles: {
+          track_style: new TMap.PolylineStyle({
+            color: '#64B5F6',
+            width: 6,
+          }),
+        },
+      });
+      log('轨迹折线已绘制');
+    }
+
+    function updateMarkers(latLngs) {
+      if (latLngs.length === 0) {
+        clearMarkers();
+        return;
+      }
+      const geometries = [];
+      geometries.push({ id: 'start', position: latLngs[0], styleId: 'start' });
+      const endIndex = latLngs.length > 1 ? latLngs.length - 1 : 0;
+      geometries.push({ id: 'end', position: latLngs[endIndex], styleId: 'end' });
+
+      if (markerLayer && typeof markerLayer.setGeometries === 'function') {
+        markerLayer.setGeometries(geometries);
+        log('起点终点标记已更新');
+        return;
+      }
+      if (markerLayer && typeof markerLayer.setMap === 'function') {
+        try {
+          markerLayer.setMap(null);
+        } catch (err) {
+          log('移除旧标记失败: ' + err);
+        }
+      }
+      markerLayer = new TMap.MultiMarker({
         id: 'markers',
         map,
         styles: {
           start: new TMap.MarkerStyle({ width: 30, height: 42, src: 'https://mapapi.qq.com/web/miniprogram/demoCenter/images/marker-start.png' }),
           end: new TMap.MarkerStyle({ width: 30, height: 42, src: 'https://mapapi.qq.com/web/miniprogram/demoCenter/images/marker-end.png' }),
         },
-        geometries: [
-          { id: 'start', position: latLngs[0], styleId: 'start' },
-          { id: 'end', position: latLngs[latLngs.length - 1], styleId: 'end' },
-        ],
+        geometries,
       });
       log('起点终点标记已绘制');
+    }
+
+    function renderTrack(pointList) {
+      if (!Array.isArray(pointList) || pointList.length === 0) {
+        log('没有点位，等待后续更新');
+        clearPolyline();
+        clearMarkers();
+        return;
+      }
+      const latLngs = pointList.map((p) => createLatLng(p));
+      log('生成 LatLng 数组: ' + latLngs.length);
+      ensureMapCentered(pointList[pointList.length - 1]);
+      updatePolyline(latLngs);
+      updateMarkers(latLngs);
+      log('轨迹内容已更新');
+    }
+
+    window.initMap = function() {
+      log('initMap 调用，点位数量: ' + points.length);
+      ensureMapCentered(points.length > 0 ? points[points.length - 1] : DEFAULT_CENTER);
+      renderTrack(points);
+      if (Array.isArray(window.__pendingPoints)) {
+        const cached = window.__pendingPoints;
+        window.__pendingPoints = null;
+        log('应用缓存点位: ' + cached.length);
+        renderTrack(cached);
+      }
+      log('__READY__');
+    };
+
+    window.updateTrack = function(updatedPoints) {
+      if (!Array.isArray(updatedPoints)) {
+        log('updateTrack 收到无效数据');
+        return;
+      }
+      points = updatedPoints;
+      if (typeof TMap === 'undefined') {
+        log('TMap 尚未可用，暂存点位');
+        window.__pendingPoints = updatedPoints;
+        return;
+      }
+      if (!map && (!updatedPoints || updatedPoints.length === 0)) {
+        log('updateTrack 空数据，地图尚未初始化');
+        return;
+      }
+      if (!map && updatedPoints.length > 0) {
+        ensureMapCentered(updatedPoints[updatedPoints.length - 1]);
+      }
+      renderTrack(updatedPoints);
     };
   </script>
   <script src="https://map.qq.com/api/gljs?v=1.exp&callback=initMap&referer=flutter_app&key=$_tencentMapKey" async defer></script>
@@ -274,11 +396,41 @@ class _TencentMapViewState extends State<_TencentMapView> {
 </html>
 ''';
 
-    _controller.loadHtmlString(
-      html,
-      baseUrl: _tencentMapBaseUrl,
+    _controller.loadHtmlString(html, baseUrl: _tencentMapBaseUrl);
+    _hasLoadedContent = true;
+    _pushLog('加载腾讯地图页面，点位数量：${samples.length}');
+  }
+
+  String _encodePoints(List<LocationSample> samples) {
+    return jsonEncode(
+      samples
+          .map((sample) => {'lat': sample.latitude, 'lng': sample.longitude})
+          .toList(),
     );
-    _pushLog('加载腾讯地图页面，点位数量：${points.length}');
+  }
+
+  void _scheduleMapUpdate() {
+    if (!_hasLoadedContent) {
+      return;
+    }
+    _pendingUpdate = true;
+    _flushPendingUpdate();
+  }
+
+  void _flushPendingUpdate() {
+    if (!_pendingUpdate || !_pageReady) {
+      return;
+    }
+    final pointsJson = _latestPointsJson;
+    if (pointsJson == null) {
+      return;
+    }
+    _pendingUpdate = false;
+    _controller.runJavaScript('window.updateTrack($pointsJson);').catchError((
+      error,
+    ) {
+      _pushLog('更新轨迹失败: $error');
+    });
   }
 
   @override

@@ -3,7 +3,12 @@ import 'dart:collection';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:myapp/main.dart';
+import 'package:myapp/core/app_state.dart';
+import 'package:myapp/core/models/device_snapshot.dart';
+import 'package:myapp/core/models/location_sample.dart';
+import 'package:myapp/core/models/map_provider.dart';
+import 'package:myapp/ui/app_state_scope.dart';
+import 'package:myapp/ui/pages/device_info_page.dart';
 
 void main() {
   testWidgets('Device info page renders snapshot details', (WidgetTester tester) async {

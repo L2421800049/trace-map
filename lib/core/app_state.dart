@@ -1,0 +1,237 @@
+import 'dart:async' show Timer, unawaited;
+import 'dart:collection';
+
+import 'package:flutter/foundation.dart';
+
+import 'models/device_snapshot.dart';
+import 'models/location_sample.dart';
+import 'models/map_provider.dart';
+import 'repositories/device_info_repository.dart';
+import 'repositories/track_repository.dart';
+import 'services/settings_store.dart';
+
+abstract class AppStateBase extends ChangeNotifier {
+  DeviceSnapshot? get latestSnapshot;
+  UnmodifiableListView<LocationSample> get samples;
+  bool get isCollecting;
+  int get samplingIntervalSeconds;
+  int get retentionDays;
+  MapProvider get mapProvider;
+  UnmodifiableListView<String> get mapLogs;
+
+  Future<void> collectNow();
+  Future<void> updateSamplingInterval(int seconds);
+  Future<void> updateRetentionDays(int days);
+  Future<void> clearHistory();
+  Future<void> updateMapProvider(MapProvider provider);
+  void cacheMapLogs(List<String> logs);
+}
+
+class AppState extends AppStateBase {
+  AppState._({
+    required SettingsStore settingsStore,
+    required TrackRepository trackRepository,
+    required DeviceInfoRepository deviceRepository,
+    required int samplingIntervalSeconds,
+    required int retentionDays,
+    required MapProvider mapProvider,
+  })  : _settingsStore = settingsStore,
+        _trackRepository = trackRepository,
+        _deviceRepository = deviceRepository,
+        _samplingIntervalSeconds = samplingIntervalSeconds,
+        _retentionDays = retentionDays,
+        _mapProvider = mapProvider;
+
+  final SettingsStore _settingsStore;
+  final TrackRepository _trackRepository;
+  final DeviceInfoRepository _deviceRepository;
+
+  Timer? _timer;
+  bool _collecting = false;
+  DeviceSnapshot? _latestSnapshot;
+  List<LocationSample> _samples = const [];
+
+  int _samplingIntervalSeconds;
+  int _retentionDays;
+  MapProvider _mapProvider;
+  List<String> _mapLogs = const [];
+
+  static Future<AppState> initialize() async {
+    final settingsStore = await SharedPrefsSettingsStore.create();
+    final trackRepository = await TrackRepository.open();
+    final deviceRepository = PluginDeviceInfoRepository();
+
+    final samplingInterval =
+        await settingsStore.readInterval() ?? SamplingSettings.defaultInterval;
+    final retentionDays = await settingsStore.readRetentionDays() ??
+        SamplingSettings.defaultRetentionDays;
+    final mapProvider =
+        mapProviderFromStorage(await settingsStore.readMapProvider());
+
+    final state = AppState._(
+      settingsStore: settingsStore,
+      trackRepository: trackRepository,
+      deviceRepository: deviceRepository,
+      samplingIntervalSeconds: samplingInterval,
+      retentionDays: retentionDays,
+      mapProvider: mapProvider,
+    );
+
+    final storedLogs = await settingsStore.readMapLogs();
+    if (storedLogs != null && storedLogs.isNotEmpty) {
+      state._mapLogs = storedLogs;
+    }
+
+    await state._loadInitialData();
+    return state;
+  }
+
+  Future<void> _loadInitialData() async {
+    await _enforceRetention();
+    _samples = await _trackRepository.fetchSamples();
+    if (_samples.isNotEmpty) {
+      final deviceDetails = await _deviceRepository.deviceDetails();
+      final last = _samples.last;
+      _latestSnapshot = DeviceSnapshot(
+        deviceDetails: deviceDetails,
+        position: last.toPosition(),
+        locationError: null,
+        retrievedAt: last.timestamp,
+      );
+    }
+    await collectNow();
+    _startTimer();
+  }
+
+  void _startTimer() {
+    _timer?.cancel();
+    _timer = Timer.periodic(
+      Duration(seconds: _samplingIntervalSeconds),
+      (_) => collectNow(),
+    );
+  }
+
+  Future<void> _performCollection() async {
+    final snapshot = await _deviceRepository.collectSnapshot();
+    _latestSnapshot = snapshot;
+    if (snapshot.position != null) {
+      final sample = LocationSample.fromPosition(
+        snapshot.position!,
+        timestamp: snapshot.retrievedAt,
+      );
+      await _trackRepository.insertSample(sample);
+    }
+    await _enforceRetention();
+    _samples = await _trackRepository.fetchSamples();
+  }
+
+  Future<void> _enforceRetention() async {
+    final cutoff = DateTime.now().subtract(Duration(days: _retentionDays));
+    await _trackRepository.deleteOlderThan(cutoff);
+  }
+
+  @override
+  Future<void> collectNow() async {
+    if (_collecting) {
+      return;
+    }
+    _collecting = true;
+    notifyListeners();
+    try {
+      await _performCollection();
+    } finally {
+      _collecting = false;
+      notifyListeners();
+    }
+  }
+
+  @override
+  Future<void> updateSamplingInterval(int seconds) async {
+    if (seconds == _samplingIntervalSeconds) {
+      return;
+    }
+    _samplingIntervalSeconds = seconds;
+    await _settingsStore.writeInterval(seconds);
+    _startTimer();
+    notifyListeners();
+  }
+
+  @override
+  Future<void> updateRetentionDays(int days) async {
+    if (days == _retentionDays) {
+      return;
+    }
+    _retentionDays = days;
+    await _settingsStore.writeRetentionDays(days);
+    await _enforceRetention();
+    _samples = await _trackRepository.fetchSamples();
+    notifyListeners();
+  }
+
+  @override
+  Future<void> clearHistory() async {
+    await _trackRepository.deleteAll();
+    _samples = const [];
+    notifyListeners();
+  }
+
+  @override
+  DeviceSnapshot? get latestSnapshot => _latestSnapshot;
+
+  @override
+  UnmodifiableListView<LocationSample> get samples =>
+      UnmodifiableListView(_samples);
+
+  @override
+  bool get isCollecting => _collecting;
+
+  @override
+  int get samplingIntervalSeconds => _samplingIntervalSeconds;
+
+  @override
+  int get retentionDays => _retentionDays;
+
+  @override
+  MapProvider get mapProvider => _mapProvider;
+
+  @override
+  UnmodifiableListView<String> get mapLogs =>
+      UnmodifiableListView(_mapLogs);
+
+  @override
+  Future<void> updateMapProvider(MapProvider provider) async {
+    if (provider == _mapProvider) {
+      return;
+    }
+    _mapProvider = provider;
+    await _settingsStore.writeMapProvider(provider);
+    notifyListeners();
+  }
+
+  @override
+  void cacheMapLogs(List<String> logs) {
+    _mapLogs = List<String>.from(logs);
+    if (logs.isEmpty) {
+      _settingsStore.clearMapLogs();
+    } else {
+      _settingsStore.writeMapLogs(_mapLogs);
+    }
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    unawaited(_trackRepository.close());
+    super.dispose();
+  }
+}
+
+class SamplingSettings {
+  static const defaultInterval = 30;
+  static const defaultRetentionDays = 7;
+  static const minInterval = 10;
+  static const maxInterval = 3600;
+  static const minRetentionDays = 1;
+  static const maxRetentionDays = 30;
+}

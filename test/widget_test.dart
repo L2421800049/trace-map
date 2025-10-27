@@ -88,6 +88,7 @@ class FakeAppState extends AppStateBase {
   int _retention = SamplingSettings.defaultRetentionDays;
   MapProvider _mapProvider = MapProvider.defaultMap;
   List<MapLogEntry> _mapLogs = const [];
+  String? _tencentMapKey;
 
   @override
   DeviceSnapshot? get latestSnapshot => _snapshot;
@@ -111,6 +112,9 @@ class FakeAppState extends AppStateBase {
   @override
   UnmodifiableListView<MapLogEntry> get mapLogs =>
       UnmodifiableListView(_mapLogs);
+
+  @override
+  String? get tencentMapKey => _tencentMapKey;
 
   @override
   Future<void> collectNow() async {
@@ -146,9 +150,14 @@ class FakeAppState extends AppStateBase {
   }
 
   @override
-  @override
   void addMapLog(MapLogEntry entry) {
     _mapLogs = [..._mapLogs, entry];
+    notifyListeners();
+  }
+
+  @override
+  Future<void> updateTencentMapKey(String? key) async {
+    _tencentMapKey = key;
     notifyListeners();
   }
 }

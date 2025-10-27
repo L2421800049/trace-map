@@ -41,6 +41,12 @@ class TrackRepository {
             message TEXT NOT NULL
           )
         ''');
+        await database.execute('''
+          CREATE TABLE settings(
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+          )
+        ''');
       },
       onOpen: (database) async {
         await database.execute('''
@@ -48,6 +54,12 @@ class TrackRepository {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             timestamp INTEGER NOT NULL,
             message TEXT NOT NULL
+          )
+        ''');
+        await database.execute('''
+          CREATE TABLE IF NOT EXISTS settings(
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
           )
         ''');
       },
@@ -64,10 +76,7 @@ class TrackRepository {
   }
 
   Future<List<LocationSample>> fetchSamples() async {
-    final rows = await _db.query(
-      'samples',
-      orderBy: 'timestamp ASC',
-    );
+    final rows = await _db.query('samples', orderBy: 'timestamp ASC');
     return rows.map(LocationSample.fromMap).toList();
   }
 
@@ -90,14 +99,35 @@ class TrackRepository {
   }
 
   Future<List<MapLogEntry>> fetchMapLogs() async {
-    final rows = await _db.query(
-      'map_logs',
-      orderBy: 'timestamp ASC',
-    );
+    final rows = await _db.query('map_logs', orderBy: 'timestamp ASC');
     return rows.map((row) => MapLogEntry.fromMap(row)).toList();
   }
 
   Future<void> clearMapLogs() async {
     await _db.delete('map_logs');
+  }
+
+  Future<void> upsertSetting(String key, String value) async {
+    await _db.insert('settings', {
+      'key': key,
+      'value': value,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<String?> readSetting(String key) async {
+    final rows = await _db.query(
+      'settings',
+      where: 'key = ?',
+      whereArgs: [key],
+      limit: 1,
+    );
+    if (rows.isEmpty) {
+      return null;
+    }
+    return rows.first['value'] as String;
+  }
+
+  Future<void> deleteSetting(String key) async {
+    await _db.delete('settings', where: 'key = ?', whereArgs: [key]);
   }
 }

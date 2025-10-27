@@ -22,41 +22,58 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   late final TextEditingController _intervalController;
   late final TextEditingController _retentionController;
+  late final TextEditingController _tencentKeyController;
   bool _saving = false;
   bool _clearing = false;
   bool _exporting = false;
   MapProvider? _selectedMapProvider;
+  bool _tencentKeyDirty = false;
+  bool _isUpdatingTencentKeyField = false;
 
   @override
   void initState() {
     super.initState();
     _intervalController = TextEditingController();
     _retentionController = TextEditingController();
+    _tencentKeyController = TextEditingController();
+    _tencentKeyController.addListener(() {
+      if (_isUpdatingTencentKeyField) {
+        return;
+      }
+      _tencentKeyDirty = true;
+    });
   }
 
   @override
   void dispose() {
     _intervalController.dispose();
     _retentionController.dispose();
+    _tencentKeyController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final appState = AppStateScope.of(context);
-    _intervalController.text =
-        _intervalController.text.isEmpty ? '${appState.samplingIntervalSeconds}' : _intervalController.text;
-    _retentionController.text =
-        _retentionController.text.isEmpty ? '${appState.retentionDays}' : _retentionController.text;
+    _intervalController.text = _intervalController.text.isEmpty
+        ? '${appState.samplingIntervalSeconds}'
+        : _intervalController.text;
+    _retentionController.text = _retentionController.text.isEmpty
+        ? '${appState.retentionDays}'
+        : _retentionController.text;
     _selectedMapProvider ??= appState.mapProvider;
+    final currentTencentKey = appState.tencentMapKey ?? '';
+    if (!_tencentKeyDirty && _tencentKeyController.text != currentTencentKey) {
+      _isUpdatingTencentKeyField = true;
+      _tencentKeyController.text = currentTencentKey;
+      _isUpdatingTencentKeyField = false;
+    }
     final mapLogs = appState.mapLogs;
     final bool canExportLogs = appState.mapProvider == MapProvider.tencent;
     final bool hasLogs = mapLogs.isNotEmpty;
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('配置'),
-      ),
+      appBar: AppBar(title: const Text('配置')),
       body: Padding(
         padding: const EdgeInsets.all(24),
         child: SingleChildScrollView(
@@ -67,7 +84,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 controller: _intervalController,
                 decoration: const InputDecoration(
                   labelText: '采集间隔（秒）',
-                  helperText: '允许范围：${SamplingSettings.minInterval} - ${SamplingSettings.maxInterval}',
+                  helperText:
+                      '允许范围：${SamplingSettings.minInterval} - ${SamplingSettings.maxInterval}',
                 ),
                 keyboardType: TextInputType.number,
               ),
@@ -76,7 +94,8 @@ class _SettingsPageState extends State<SettingsPage> {
                 controller: _retentionController,
                 decoration: const InputDecoration(
                   labelText: '数据保留天数',
-                  helperText: '允许范围：${SamplingSettings.minRetentionDays} - ${SamplingSettings.maxRetentionDays}',
+                  helperText:
+                      '允许范围：${SamplingSettings.minRetentionDays} - ${SamplingSettings.maxRetentionDays}',
                 ),
                 keyboardType: TextInputType.number,
               ),
@@ -84,9 +103,7 @@ class _SettingsPageState extends State<SettingsPage> {
               DropdownButtonFormField<MapProvider>(
                 key: ValueKey(_selectedMapProvider),
                 initialValue: _selectedMapProvider,
-                decoration: const InputDecoration(
-                  labelText: '地图提供商',
-                ),
+                decoration: const InputDecoration(labelText: '地图提供商'),
                 items: MapProvider.values
                     .map(
                       (provider) => DropdownMenuItem(
@@ -104,6 +121,16 @@ class _SettingsPageState extends State<SettingsPage> {
                   });
                 },
               ),
+              if (_selectedMapProvider == MapProvider.tencent) ...[
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _tencentKeyController,
+                  decoration: const InputDecoration(
+                    labelText: '腾讯地图 Key',
+                    helperText: '请在腾讯位置服务控制台申请，并填入 WebService Key',
+                  ),
+                ),
+              ],
               const SizedBox(height: 28),
               FilledButton.icon(
                 onPressed: _saving
@@ -173,10 +200,9 @@ class _SettingsPageState extends State<SettingsPage> {
                     canExportLogs
                         ? '暂无腾讯地图日志，请先打开“轨迹”页面等待日志生成。'
                         : '当前使用默认地图，切换为腾讯地图后即可记录日志。',
-                    style: Theme.of(context)
-                        .textTheme
-                        .bodySmall
-                        ?.copyWith(color: Colors.white70),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: Colors.white70),
                   ),
                 ),
             ],
@@ -189,6 +215,9 @@ class _SettingsPageState extends State<SettingsPage> {
   Future<void> _saveSettings(AppStateBase appState) async {
     final interval = int.tryParse(_intervalController.text.trim());
     final retention = int.tryParse(_retentionController.text.trim());
+    final providerValue = _selectedMapProvider ?? appState.mapProvider;
+    final rawTencentKey = _tencentKeyController.text.trim();
+    final keyToSave = rawTencentKey.isEmpty ? null : rawTencentKey;
 
     String? error;
     if (interval == null ||
@@ -201,13 +230,15 @@ class _SettingsPageState extends State<SettingsPage> {
         retention > SamplingSettings.maxRetentionDays) {
       error =
           '保留天数需在 ${SamplingSettings.minRetentionDays}-${SamplingSettings.maxRetentionDays} 天之间';
+    } else if (providerValue == MapProvider.tencent && (keyToSave == null)) {
+      error = '请选择腾讯地图时必须填写有效的 Key';
     }
 
     if (error != null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(error)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error)));
       }
       return;
     }
@@ -216,18 +247,22 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       final intervalValue = interval!;
       final retentionValue = retention!;
-      final providerValue = _selectedMapProvider ?? appState.mapProvider;
 
       await appState.updateSamplingInterval(intervalValue);
       await appState.updateRetentionDays(retentionValue);
+      await appState.updateTencentMapKey(keyToSave);
       await appState.updateMapProvider(providerValue);
       if (mounted) {
         _intervalController.text = '$intervalValue';
         _retentionController.text = '$retentionValue';
         _selectedMapProvider = providerValue;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('设置已保存')),
-        );
+        _isUpdatingTencentKeyField = true;
+        _tencentKeyController.text = keyToSave ?? '';
+        _isUpdatingTencentKeyField = false;
+        _tencentKeyDirty = false;
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('设置已保存')));
       }
     } finally {
       if (mounted) {
@@ -237,7 +272,8 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _confirmAndClear(AppStateBase appState) async {
-    final shouldClear = await showDialog<bool>(
+    final shouldClear =
+        await showDialog<bool>(
           context: context,
           builder: (context) {
             return AlertDialog(
@@ -266,9 +302,9 @@ class _SettingsPageState extends State<SettingsPage> {
     try {
       await appState.clearHistory();
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('历史轨迹已清空')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('历史轨迹已清空')));
       }
     } finally {
       if (mounted) {
@@ -277,11 +313,16 @@ class _SettingsPageState extends State<SettingsPage> {
     }
   }
 
-  Future<void> _exportMapLogs(AppStateBase appState, List<MapLogEntry> logs) async {
+  Future<void> _exportMapLogs(
+    AppStateBase appState,
+    List<MapLogEntry> logs,
+  ) async {
     setState(() => _exporting = true);
     final directory = await getApplicationDocumentsDirectory();
-    final timestamp =
-        DateTime.now().toIso8601String().replaceAll(':', '-').replaceAll('.', '-');
+    final timestamp = DateTime.now()
+        .toIso8601String()
+        .replaceAll(':', '-')
+        .replaceAll('.', '-');
     final filePath = path.join(directory.path, 'map_log_$timestamp.txt');
     final file = File(filePath);
 
@@ -292,7 +333,8 @@ class _SettingsPageState extends State<SettingsPage> {
 
     for (final sample in appState.samples) {
       buffer.writeln(
-          '${formatTimestamp(sample.timestamp)} -> (${sample.latitude.toStringAsFixed(6)}, ${sample.longitude.toStringAsFixed(6)})');
+        '${formatTimestamp(sample.timestamp)} -> (${sample.latitude.toStringAsFixed(6)}, ${sample.longitude.toStringAsFixed(6)})',
+      );
     }
 
     buffer.writeln('--- 日志 ---');
@@ -300,7 +342,9 @@ class _SettingsPageState extends State<SettingsPage> {
       buffer.writeln('暂无日志');
     } else {
       for (final entry in logs) {
-        buffer.writeln('${formatTimestamp(entry.timestamp)} -> ${entry.message}');
+        buffer.writeln(
+          '${formatTimestamp(entry.timestamp)} -> ${entry.message}',
+        );
       }
     }
 
@@ -311,10 +355,9 @@ class _SettingsPageState extends State<SettingsPage> {
         return;
       }
 
-      await Share.shareXFiles(
-        [XFile(file.path)],
-        text: '地图日志 (${formatTimestamp(DateTime.now())})',
-      );
+      await Share.shareXFiles([
+        XFile(file.path),
+      ], text: '地图日志 (${formatTimestamp(DateTime.now())})');
     } finally {
       if (mounted) {
         setState(() => _exporting = false);

@@ -11,9 +11,9 @@ import '../../core/models/location_sample.dart';
 import '../../core/models/map_log_entry.dart';
 import '../../core/utils/coordinate_transform.dart';
 import '../../core/utils/formatting.dart';
+import 'settings_page.dart';
 import '../app_state_scope.dart';
 
-const _tencentMapKey = '5KABZ-2CCKL-3OUPE-ELJNN-SUT4J-OZBRY';
 const _tencentMapBaseUrl = 'https://tencent-map.flutter-app.local/';
 
 class MapPage extends StatefulWidget {
@@ -29,6 +29,7 @@ class _MapPageState extends State<MapPage> {
     return AppStateBuilder(
       builder: (context, appState) {
         final samples = appState.samples;
+        final tencentKey = appState.tencentMapKey;
 
         return Scaffold(
           appBar: AppBar(title: const Text('轨迹地图')),
@@ -38,10 +39,21 @@ class _MapPageState extends State<MapPage> {
                   children: [
                     Expanded(
                       child: appState.mapProvider == MapProvider.tencent
-                          ? _TencentMapView(
-                              samples: samples,
-                              onLogEntry: appState.addMapLog,
-                            )
+                          ? (tencentKey == null || tencentKey.isEmpty
+                                ? _TencentMapKeyPrompt(
+                                    onConfigure: () {
+                                      Navigator.of(context).push(
+                                        MaterialPageRoute(
+                                          builder: (_) => const SettingsPage(),
+                                        ),
+                                      );
+                                    },
+                                  )
+                                : _TencentMapView(
+                                    samples: samples,
+                                    onLogEntry: appState.addMapLog,
+                                    apiKey: tencentKey,
+                                  ))
                           : _DefaultMapView(samples: samples),
                     ),
                     Container(
@@ -118,11 +130,45 @@ class _DefaultMapView extends StatelessWidget {
   }
 }
 
+class _TencentMapKeyPrompt extends StatelessWidget {
+  const _TencentMapKeyPrompt({required this.onConfigure});
+
+  final VoidCallback onConfigure;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.vpn_key_outlined, size: 64),
+            const SizedBox(height: 16),
+            const Text('请先配置腾讯地图 Key 才能显示轨迹。', textAlign: TextAlign.center),
+            const SizedBox(height: 12),
+            FilledButton.icon(
+              onPressed: onConfigure,
+              icon: const Icon(Icons.settings_outlined),
+              label: const Text('前往配置'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _TencentMapView extends StatefulWidget {
-  const _TencentMapView({required this.samples, required this.onLogEntry});
+  const _TencentMapView({
+    required this.samples,
+    required this.onLogEntry,
+    required this.apiKey,
+  });
 
   final List<LocationSample> samples;
   final ValueChanged<MapLogEntry> onLogEntry;
+  final String apiKey;
 
   @override
   State<_TencentMapView> createState() => _TencentMapViewState();
@@ -154,6 +200,11 @@ class _TencentMapViewState extends State<_TencentMapView> {
   @override
   void didUpdateWidget(covariant _TencentMapView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.apiKey != widget.apiKey) {
+      _pushLog('腾讯地图密钥已更新，重新加载页面');
+      _loadInitialContent(widget.samples);
+      return;
+    }
     if (!listEquals(oldWidget.samples, widget.samples)) {
       _pushLog('样本更新：${widget.samples.length} 个点');
       _latestPointsJson = _encodePoints(widget.samples);
@@ -181,6 +232,8 @@ class _TencentMapViewState extends State<_TencentMapView> {
     _latestPointsJson = pointsJson;
     _pageReady = false;
     _pendingUpdate = true;
+    _hasLoadedContent = false;
+    _loggedProjectionHint = false;
     final html =
         '''
 <!DOCTYPE html>
@@ -390,7 +443,7 @@ class _TencentMapViewState extends State<_TencentMapView> {
       renderTrack(updatedPoints);
     };
   </script>
-  <script src="https://map.qq.com/api/gljs?v=1.exp&callback=initMap&referer=flutter_app&key=$_tencentMapKey" async defer></script>
+  <script src="https://map.qq.com/api/gljs?v=1.exp&callback=initMap&referer=flutter_app&key=${widget.apiKey}" async defer></script>
 </head>
 <body>
   <div id="map"></div>

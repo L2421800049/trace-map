@@ -19,6 +19,7 @@ abstract class AppStateBase extends ChangeNotifier {
   int get retentionDays;
   MapProvider get mapProvider;
   UnmodifiableListView<MapLogEntry> get mapLogs;
+  String? get tencentMapKey;
 
   Future<void> collectNow();
   Future<void> updateSamplingInterval(int seconds);
@@ -26,6 +27,7 @@ abstract class AppStateBase extends ChangeNotifier {
   Future<void> clearHistory();
   Future<void> updateMapProvider(MapProvider provider);
   void addMapLog(MapLogEntry entry);
+  Future<void> updateTencentMapKey(String? key);
 }
 
 class AppState extends AppStateBase {
@@ -36,12 +38,14 @@ class AppState extends AppStateBase {
     required int samplingIntervalSeconds,
     required int retentionDays,
     required MapProvider mapProvider,
-  })  : _settingsStore = settingsStore,
-        _trackRepository = trackRepository,
-        _deviceRepository = deviceRepository,
-        _samplingIntervalSeconds = samplingIntervalSeconds,
-        _retentionDays = retentionDays,
-        _mapProvider = mapProvider;
+    required String? tencentMapKey,
+  }) : _settingsStore = settingsStore,
+       _trackRepository = trackRepository,
+       _deviceRepository = deviceRepository,
+       _samplingIntervalSeconds = samplingIntervalSeconds,
+       _retentionDays = retentionDays,
+       _mapProvider = mapProvider,
+       _tencentMapKey = tencentMapKey;
 
   final SettingsStore _settingsStore;
   final TrackRepository _trackRepository;
@@ -56,6 +60,9 @@ class AppState extends AppStateBase {
   int _retentionDays;
   MapProvider _mapProvider;
   List<MapLogEntry> _mapLogs = const [];
+  String? _tencentMapKey;
+
+  static const _tencentKeySetting = 'tencent_map_key';
 
   static Future<AppState> initialize() async {
     final settingsStore = await SharedPrefsSettingsStore.create();
@@ -64,10 +71,13 @@ class AppState extends AppStateBase {
 
     final samplingInterval =
         await settingsStore.readInterval() ?? SamplingSettings.defaultInterval;
-    final retentionDays = await settingsStore.readRetentionDays() ??
+    final retentionDays =
+        await settingsStore.readRetentionDays() ??
         SamplingSettings.defaultRetentionDays;
-    final mapProvider =
-        mapProviderFromStorage(await settingsStore.readMapProvider());
+    final mapProvider = mapProviderFromStorage(
+      await settingsStore.readMapProvider(),
+    );
+    final tencentKey = await trackRepository.readSetting(_tencentKeySetting);
 
     final state = AppState._(
       settingsStore: settingsStore,
@@ -76,6 +86,7 @@ class AppState extends AppStateBase {
       samplingIntervalSeconds: samplingInterval,
       retentionDays: retentionDays,
       mapProvider: mapProvider,
+      tencentMapKey: tencentKey,
     );
 
     state._mapLogs = await trackRepository.fetchMapLogs();
@@ -193,6 +204,9 @@ class AppState extends AppStateBase {
   MapProvider get mapProvider => _mapProvider;
 
   @override
+  String? get tencentMapKey => _tencentMapKey;
+
+  @override
   UnmodifiableListView<MapLogEntry> get mapLogs =>
       UnmodifiableListView(_mapLogs);
 
@@ -210,6 +224,19 @@ class AppState extends AppStateBase {
   void addMapLog(MapLogEntry entry) {
     _mapLogs = [..._mapLogs, entry];
     unawaited(_trackRepository.insertMapLog(entry));
+    notifyListeners();
+  }
+
+  @override
+  Future<void> updateTencentMapKey(String? key) async {
+    final trimmed = key?.trim();
+    if (trimmed == null || trimmed.isEmpty) {
+      _tencentMapKey = null;
+      await _trackRepository.deleteSetting(_tencentKeySetting);
+    } else {
+      _tencentMapKey = trimmed;
+      await _trackRepository.upsertSetting(_tencentKeySetting, trimmed);
+    }
     notifyListeners();
   }
 

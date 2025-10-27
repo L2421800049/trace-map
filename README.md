@@ -1,16 +1,97 @@
-# myapp
+# 轨迹采集与地图可视化应用
 
-A new Flutter project.
+一个使用 Flutter 编写的轨迹采集应用：定时采集设备定位信息，保存到本地数据库，并在地图上绘制轨迹。支持默认 OpenStreetMap 和腾讯地图两种渲染方式，适合在不依赖远端服务的情况下快速查看轨迹。
 
-## Getting Started
+## 功能概览
 
-This project is a starting point for a Flutter application.
+- **定位采集**：基于 `geolocator` 动态请求权限、定时采样，记录精度、速度、方向、海拔等信息。
+- **数据存储**：使用 `sqflite` 将采样点与地图日志存储在本地 SQLite 数据库中，支持按天自动清理、手动清空。
+- **地图展示**：
+  - 默认地图使用 `flutter_map` + OpenStreetMap 瓦片。
+  - 腾讯地图通过内嵌 WebView 加载 JS SDK，支持日志回传与增量刷新，避免页面闪烁。
+  - 相同轨迹在腾讯地图中会自动从 WGS-84 投影转换为 GCJ-02，保证定位一致。
+- **日志与导出**：所有 WebView 日志写入数据库，可在应用内查看与导出。
 
-A few resources to get you started if this is your first Flutter project:
+## 开发环境
 
-- [Lab: Write your first Flutter app](https://docs.flutter.dev/get-started/codelab)
-- [Cookbook: Useful Flutter samples](https://docs.flutter.dev/cookbook)
+| 组件 | 要求 |
+| ---- | ---- |
+| Flutter | 3.35.7（Dart 3.9.2）或以上 |
+| Android SDK | 33+，需安装 build-tools 35.x |
+| Java | JDK 17（例如 `brew install openjdk@17`） |
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev/), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+> macOS 上构建 Android 发行版时，请确保设置 `JAVA_HOME="$(brew --prefix openjdk@17)/libexec/openjdk.jdk/Contents/Home"`。
+
+## 目录结构速览
+
+- `lib/core`：应用状态、数据模型、仓库、工具方法。
+- `lib/ui`：页面与组件（地图、设置、设备信息等）。
+- `lib/core/utils/coordinate_transform.dart`：WGS-84 ↔︎ GCJ-02 转换实现，用于腾讯地图。
+- `third_party/amap_flutter_*`：高德地图插件源码（暂未启用，仅保留以备扩展）。
+
+## 安装依赖
+
+```bash
+flutter pub get
+```
+
+## 运行应用
+
+```bash
+# 调试模式
+flutter run
+
+# Android 发行包（含树摇 Material Icons）
+JAVA_HOME="$(brew --prefix openjdk@17)/libexec/openjdk.jdk/Contents/Home" \
+PATH="$JAVA_HOME/bin:$PATH" \
+flutter build apk
+```
+
+构建产物位于 `build/app/outputs/flutter-apk/app-release.apk`。
+
+## 自动采集与配置
+
+应用初始化会：
+
+1. 读取/写入 SharedPreferences 中存储的采样间隔、保留天数、地图提供商。
+2. 打开 SQLite 数据库，加载历史轨迹与地图日志。
+3. 立即采集一次定位，并按设定间隔（默认 30 秒）开启定时器。
+
+设置页面可调整采样间隔（10–3600 秒）与历史保留天数（1–30 天）。
+
+## 地图渲染细节
+
+- **默认地图**：直接绘制 WGS-84 坐标。
+- **腾讯地图**：
+  - WebView 通过自定义 JS 与 Flutter 通信，加载一次后仅更新点集，轨迹不会闪烁。
+  - 为满足国家标准定位要求，每个采样点在发送给 JS 前都会应用 WGS-84 → GCJ-02 转换。
+  - JS 页面会把增量更新日志通过 `LogChannel` 返回，应用内“地图日志”页面会显示例如 `应用 GCJ-02 转换：Δlat=...` 这类提示。
+
+腾讯地图 API Key 位于 `lib/ui/pages/map_page.dart` 中的 `_tencentMapKey` 常量，如需替换请在腾讯位置服务控制台申请并更新。
+
+## 数据库结构
+
+数据库文件位于应用沙箱下 `device_track.sqlite`，包括：
+
+- `samples`：采样点，包含时间戳、经纬度、精度、速度、方向等字段。
+- `map_logs`：地图相关日志（包含 JS 侧日志、Flutter 侧记录）。
+
+可以通过 `TrackRepository` 的接口访问这些数据。
+
+## 测试
+
+现有 widget 测试示例，通过以下命令运行所有测试：
+
+```bash
+flutter test
+```
+
+## 故障排查
+
+- **腾讯地图无法加载**：检查设备是否联网，确认 API Key 可用，查看地图日志是否出现 403 或鉴权提示。
+- **定位偏移明显**：确认是否在中国大陆境内；腾讯地图使用 GCJ-02，默认地图使用 WGS-84，偏移通常是原始 GPS 坐标的系统误差。
+- **构建失败（找不到 Java Runtime）**：确认已安装 JDK 17，并在终端中导出正确的 `JAVA_HOME`。
+
+## 版权与许可
+
+本项目未指定开源协议，默认保留所有权利。如需对外发布或开源，请根据实际情况添加许可条款。

@@ -73,10 +73,10 @@ class FakeAppState extends AppStateBase {
     required DeviceSnapshot snapshot,
     required List<LocationSample> samples,
   })  : _snapshot = snapshot,
-        _samples = samples;
+        _samples = List<LocationSample>.of(samples);
 
   final DeviceSnapshot? _snapshot;
-  final List<LocationSample> _samples;
+  List<LocationSample> _samples;
   bool _collecting = false;
   int _interval = SamplingSettings.defaultInterval;
   int _retention = SamplingSettings.defaultRetentionDays;
@@ -115,6 +115,12 @@ class FakeAppState extends AppStateBase {
   @override
   Future<void> updateRetentionDays(int days) async {
     _retention = days;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> clearHistory() async {
+    _samples = [];
     notifyListeners();
   }
 }

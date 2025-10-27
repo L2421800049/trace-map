@@ -464,6 +464,7 @@ class _SettingsPageState extends State<SettingsPage> {
   late final TextEditingController _intervalController;
   late final TextEditingController _retentionController;
   bool _saving = false;
+  bool _clearing = false;
 
   @override
   void initState() {
@@ -529,6 +530,22 @@ class _SettingsPageState extends State<SettingsPage> {
                   : const Icon(Icons.save_outlined),
               label: const Text('保存设置'),
             ),
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: _clearing
+                  ? null
+                  : () async {
+                      await _confirmAndClear(appState);
+                    },
+              icon: _clearing
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.delete_outline),
+              label: const Text('清空历史轨迹'),
+            ),
           ],
         ),
       ),
@@ -578,6 +595,47 @@ class _SettingsPageState extends State<SettingsPage> {
     } finally {
       if (mounted) {
         setState(() => _saving = false);
+      }
+    }
+  }
+
+  Future<void> _confirmAndClear(AppStateBase appState) async {
+    final shouldClear = await showDialog<bool>(
+          context: context,
+          builder: (context) {
+            return AlertDialog(
+              title: const Text('确认清空轨迹数据'),
+              content: const Text('此操作会删除所有已保存的历史轨迹数据，且不可恢复。是否继续？'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(false),
+                  child: const Text('取消'),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.of(context).pop(true),
+                  child: const Text('清空'),
+                ),
+              ],
+            );
+          },
+        ) ??
+        false;
+
+    if (!shouldClear) {
+      return;
+    }
+
+    setState(() => _clearing = true);
+    try {
+      await appState.clearHistory();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('历史轨迹已清空')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _clearing = false);
       }
     }
   }
@@ -632,6 +690,7 @@ abstract class AppStateBase extends ChangeNotifier {
   Future<void> collectNow();
   Future<void> updateSamplingInterval(int seconds);
   Future<void> updateRetentionDays(int days);
+  Future<void> clearHistory();
 }
 
 class AppState extends AppStateBase {
@@ -764,6 +823,13 @@ class AppState extends AppStateBase {
   }
 
   @override
+  Future<void> clearHistory() async {
+    await _trackRepository.deleteAll();
+    _samples = const [];
+    notifyListeners();
+  }
+
+  @override
   DeviceSnapshot? get latestSnapshot => _latestSnapshot;
 
   @override
@@ -887,6 +953,10 @@ class TrackRepository {
       where: 'timestamp < ?',
       whereArgs: [cutoff.millisecondsSinceEpoch],
     );
+  }
+
+  Future<void> deleteAll() async {
+    await _db.delete('samples');
   }
 
   Future<void> close() => _db.close();

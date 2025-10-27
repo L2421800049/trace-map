@@ -375,43 +375,6 @@ class _MapPageState extends State<MapPage> {
     });
   }
 
-  Future<void> _exportLogs(AppStateBase appState) async {
-    final directory = await getApplicationDocumentsDirectory();
-    final timestamp =
-        DateTime.now().toIso8601String().replaceAll(':', '-').replaceAll('.', '-');
-    final filePath = path.join(directory.path, 'map_log_$timestamp.txt');
-    final file = File(filePath);
-
-    final buffer = StringBuffer()
-      ..writeln('地图提供商: ${_mapProviderDisplayName(appState.mapProvider)}')
-      ..writeln('记录数量: ${appState.samples.length}')
-      ..writeln('--- 轨迹坐标 ---');
-
-    for (final sample in appState.samples) {
-      buffer.writeln(
-          '${_formatTimestamp(sample.timestamp)} -> (${sample.latitude.toStringAsFixed(6)}, ${sample.longitude.toStringAsFixed(6)})');
-    }
-
-    buffer.writeln('--- 日志 ---');
-    if (_mapLogs.isEmpty) {
-      buffer.writeln('暂无日志');
-    } else {
-      for (final line in _mapLogs) {
-        buffer.writeln(line);
-      }
-    }
-
-    await file.writeAsString(buffer.toString());
-
-    if (!mounted) {
-      return;
-    }
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('日志已导出: $filePath')),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return AppStateBuilder(
@@ -420,18 +383,12 @@ class _MapPageState extends State<MapPage> {
 
         if (appState.mapProvider != MapProvider.tencent && _mapLogs.isNotEmpty) {
           _mapLogs = const [];
+          appState.cacheMapLogs(const []);
         }
 
         return Scaffold(
           appBar: AppBar(
             title: const Text('轨迹地图'),
-            actions: [
-              IconButton(
-                tooltip: '导出日志',
-                onPressed: () => _exportLogs(appState),
-                icon: const Icon(Icons.download_outlined),
-              ),
-            ],
           ),
           body: samples.isEmpty
               ? const _EmptyMapState()
@@ -441,7 +398,10 @@ class _MapPageState extends State<MapPage> {
                       child: appState.mapProvider == MapProvider.tencent
                           ? _TencentMapView(
                               samples: samples,
-                              onLogsUpdated: _handleLogsUpdated,
+                              onLogsUpdated: (logs) {
+                                _handleLogsUpdated(logs);
+                                appState.cacheMapLogs(logs);
+                              },
                             )
                           : _DefaultMapView(samples: samples),
                     ),
@@ -710,6 +670,7 @@ class _SettingsPageState extends State<SettingsPage> {
   bool _saving = false;
   bool _clearing = false;
   MapProvider? _selectedMapProvider;
+  bool _exporting = false;
 
   @override
   void initState() {
@@ -733,6 +694,7 @@ class _SettingsPageState extends State<SettingsPage> {
     _retentionController.text =
         _retentionController.text.isEmpty ? '${appState.retentionDays}' : _retentionController.text;
     _selectedMapProvider ??= appState.mapProvider;
+    final mapLogs = appState.mapLogs;
 
     return Scaffold(
       appBar: AppBar(
@@ -814,6 +776,22 @@ class _SettingsPageState extends State<SettingsPage> {
                     )
                   : const Icon(Icons.delete_outline),
               label: const Text('清空历史轨迹'),
+            ),
+            const SizedBox(height: 16),
+            FilledButton.icon(
+              onPressed: _exporting
+                  ? null
+                  : () async {
+                      await _exportMapLogs(appState, mapLogs);
+                    },
+              icon: _exporting
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.download_outlined),
+              label: const Text('导出地图日志'),
             ),
           ],
         ),
@@ -911,6 +889,50 @@ class _SettingsPageState extends State<SettingsPage> {
       }
     }
   }
+
+  Future<void> _exportMapLogs(AppStateBase appState, List<String> logs) async {
+    setState(() => _exporting = true);
+    final directory = await getApplicationDocumentsDirectory();
+    final timestamp =
+        DateTime.now().toIso8601String().replaceAll(':', '-').replaceAll('.', '-');
+    final filePath = path.join(directory.path, 'map_log_$timestamp.txt');
+    final file = File(filePath);
+
+    final buffer = StringBuffer()
+      ..writeln('地图提供商: ${_mapProviderDisplayName(appState.mapProvider)}')
+      ..writeln('记录数量: ${appState.samples.length}')
+      ..writeln('--- 轨迹坐标 ---');
+
+    for (final sample in appState.samples) {
+      buffer.writeln(
+          '${_formatTimestamp(sample.timestamp)} -> (${sample.latitude.toStringAsFixed(6)}, ${sample.longitude.toStringAsFixed(6)})');
+    }
+
+    buffer.writeln('--- 日志 ---');
+    if (logs.isEmpty) {
+      buffer.writeln('暂无日志');
+    } else {
+      for (final line in logs) {
+        buffer.writeln(line);
+      }
+    }
+
+    try {
+      await file.writeAsString(buffer.toString());
+
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('日志已导出: $filePath')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _exporting = false);
+      }
+    }
+  }
 }
 
 class _CenteredProgress extends StatelessWidget {
@@ -959,12 +981,14 @@ abstract class AppStateBase extends ChangeNotifier {
   int get samplingIntervalSeconds;
   int get retentionDays;
   MapProvider get mapProvider;
+  UnmodifiableListView<String> get mapLogs;
 
   Future<void> collectNow();
   Future<void> updateSamplingInterval(int seconds);
   Future<void> updateRetentionDays(int days);
   Future<void> clearHistory();
   Future<void> updateMapProvider(MapProvider provider);
+  void cacheMapLogs(List<String> logs);
 }
 
 class AppState extends AppStateBase {
@@ -994,6 +1018,7 @@ class AppState extends AppStateBase {
   int _samplingIntervalSeconds;
   int _retentionDays;
   MapProvider _mapProvider;
+  List<String> _mapLogs = const [];
 
   static Future<AppState> initialize() async {
     final settingsStore = await SharedPrefsSettingsStore.create();
@@ -1135,6 +1160,16 @@ class AppState extends AppStateBase {
     }
     _mapProvider = provider;
     await _settingsStore.writeMapProvider(provider);
+    notifyListeners();
+  }
+
+  @override
+  UnmodifiableListView<String> get mapLogs =>
+      UnmodifiableListView(_mapLogs);
+
+  @override
+  void cacheMapLogs(List<String> logs) {
+    _mapLogs = List<String>.from(logs);
     notifyListeners();
   }
 

@@ -81,6 +81,7 @@ class FakeAppState extends AppStateBase {
   int _interval = SamplingSettings.defaultInterval;
   int _retention = SamplingSettings.defaultRetentionDays;
   MapProvider _mapProvider = MapProvider.defaultMap;
+  List<String> _mapLogs = const [];
 
   @override
   DeviceSnapshot? get latestSnapshot => _snapshot;
@@ -100,6 +101,10 @@ class FakeAppState extends AppStateBase {
 
   @override
   MapProvider get mapProvider => _mapProvider;
+
+  @override
+  UnmodifiableListView<String> get mapLogs =>
+      UnmodifiableListView(_mapLogs);
 
   @override
   Future<void> collectNow() async {
@@ -131,6 +136,12 @@ class FakeAppState extends AppStateBase {
   @override
   Future<void> updateMapProvider(MapProvider provider) async {
     _mapProvider = provider;
+    notifyListeners();
+  }
+
+  @override
+  void cacheMapLogs(List<String> logs) {
+    _mapLogs = List<String>.from(logs);
     notifyListeners();
   }
 }

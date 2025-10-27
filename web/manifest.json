@@ -1,11 +1,11 @@
 {
-    "name": "myapp",
-    "short_name": "myapp",
+    "name": "轨迹地图",
+    "short_name": "轨迹地图",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "基于 Flutter 的轨迹采集与地图可视化应用。",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

@@ -27,7 +27,7 @@ class _DeviceInsightAppState extends State<DeviceInsightApp> {
     return AppStateScope(
       notifier: widget.appState,
       child: MaterialApp(
-        title: '设备轨迹采集',
+        title: '轨迹地图',
         debugShowCheckedModeBanner: false,
         theme: ThemeData(
           colorScheme: ColorScheme.fromSeed(
@@ -52,31 +52,18 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
 
-  static const _pages = [
-    DeviceInfoPage(),
-    MapPage(),
-    SettingsPage(),
-  ];
+  static const _pages = [DeviceInfoPage(), MapPage(), SettingsPage()];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: IndexedStack(
-        index: _index,
-        children: _pages,
-      ),
+      body: IndexedStack(index: _index, children: _pages),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (value) => setState(() => _index = value),
         destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.info_outline),
-            label: '设备',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.map_outlined),
-            label: '轨迹',
-          ),
+          NavigationDestination(icon: Icon(Icons.info_outline), label: '设备'),
+          NavigationDestination(icon: Icon(Icons.map_outlined), label: '轨迹'),
           NavigationDestination(
             icon: Icon(Icons.settings_outlined),
             label: '设置',

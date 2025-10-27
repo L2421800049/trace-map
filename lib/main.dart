@@ -2,15 +2,26 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
 
+import 'package:amap_flutter_base/amap_flutter_base.dart';
+import 'package:amap_flutter_map/amap_flutter_map.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_map/flutter_map.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:latlong2/latlong.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
+
+const _amapAndroidKey = 'fcc94241be73658fe06c71b535485747';
+const AMapApiKey _amapApiKeys = AMapApiKey(
+  androidKey: _amapAndroidKey,
+  iosKey: '',
+);
+const AMapPrivacyStatement _amapPrivacyAgreement = AMapPrivacyStatement(
+  hasContains: true,
+  hasShow: true,
+  hasAgree: true,
+);
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -348,67 +359,8 @@ class MapPage extends StatelessWidget {
               : Column(
                   children: [
                     Expanded(
-                      child: FlutterMap(
-                        options: MapOptions(
-                          initialCenter: LatLng(
-                            samples.last.latitude,
-                            samples.last.longitude,
-                          ),
-                          initialZoom: 16,
-                        ),
-                        children: [
-                          TileLayer(
-                            urlTemplate:
-                                'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                            userAgentPackageName: 'com.example.myapp',
-                          ),
-                          PolylineLayer(
-                            polylines: [
-                              Polyline(
-                                points: samples
-                                    .map(
-                                      (sample) => LatLng(
-                                        sample.latitude,
-                                        sample.longitude,
-                                      ),
-                                    )
-                                    .toList(),
-                                strokeWidth: 4,
-                                color: Colors.lightBlueAccent,
-                              ),
-                            ],
-                          ),
-                          MarkerLayer(
-                            markers: [
-                              Marker(
-                                point: LatLng(
-                                  samples.first.latitude,
-                                  samples.first.longitude,
-                                ),
-                                width: 40,
-                                height: 40,
-                                child: const Icon(
-                                  Icons.flag,
-                                  color: Colors.greenAccent,
-                                  size: 30,
-                                ),
-                              ),
-                              Marker(
-                                point: LatLng(
-                                  samples.last.latitude,
-                                  samples.last.longitude,
-                                ),
-                                width: 40,
-                                height: 40,
-                                child: const Icon(
-                                  Icons.place,
-                                  color: Colors.redAccent,
-                                  size: 34,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
+                      child: _AmapTrackView(
+                        samples: samples,
                       ),
                     ),
                     Container(
@@ -431,6 +383,56 @@ class MapPage extends StatelessWidget {
                 ),
         );
       },
+    );
+  }
+}
+
+class _AmapTrackView extends StatelessWidget {
+  const _AmapTrackView({required this.samples});
+
+  final List<LocationSample> samples;
+
+  @override
+  Widget build(BuildContext context) {
+    AMapUtil.init(context);
+    final points = samples
+        .map(
+          (sample) => LatLng(sample.latitude, sample.longitude),
+        )
+        .toList();
+
+    final markers = <Marker>{
+      Marker(
+        position: points.first,
+        infoWindow: const InfoWindow(title: '起点'),
+        icon: BitmapDescriptor.defaultMarkerWithHue(
+          BitmapDescriptor.hueGreen,
+        ),
+      ),
+      Marker(
+        position: points.last,
+        infoWindow: const InfoWindow(title: '终点'),
+        icon: BitmapDescriptor.defaultMarkerWithHue(
+          BitmapDescriptor.hueRed,
+        ),
+      ),
+    };
+
+    final polyline = Polyline(
+      width: 6,
+      color: Colors.lightBlueAccent,
+      points: points,
+    );
+
+    return AMapWidget(
+      apiKey: _amapApiKeys,
+      privacyStatement: _amapPrivacyAgreement,
+      initialCameraPosition: CameraPosition(
+        target: points.last,
+        zoom: 16,
+      ),
+      markers: markers,
+      polylines: {polyline},
     );
   }
 }

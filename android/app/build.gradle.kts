@@ -35,10 +35,17 @@ android {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
             signingConfig = signingConfigs.getByName("debug")
+            isMinifyEnabled = false
+            isShrinkResources = false
         }
     }
 }
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    implementation("com.tencent.map:tencent-map-vector-sdk:6.3.0.250311.940c5007.146962199")
+    implementation("com.tencent.map:tencent-map-nav-sdk:5.4.6.1")
 }

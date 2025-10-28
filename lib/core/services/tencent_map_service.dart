@@ -1,5 +1,8 @@
 import 'dart:convert';
+import 'dart:io' show Platform;
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
 
 class TencentMapService {
@@ -7,7 +10,55 @@ class TencentMapService {
 
   final http.Client? _client;
 
+  static const MethodChannel _channel =
+      MethodChannel('com.example.myapp/tencent_map_service');
+
   Future<String?> reverseGeocode({
+    required double latitude,
+    required double longitude,
+    required String apiKey,
+  }) async {
+    final nativeResult = _normalizeResult(
+      await _reverseGeocodeViaSdk(
+        latitude: latitude,
+        longitude: longitude,
+        apiKey: apiKey,
+      ),
+    );
+    if (nativeResult != null) {
+      return nativeResult;
+    }
+    return _normalizeResult(
+      await _reverseGeocodeViaHttp(
+        latitude: latitude,
+        longitude: longitude,
+        apiKey: apiKey,
+      ),
+    );
+  }
+
+  Future<String?> _reverseGeocodeViaSdk({
+    required double latitude,
+    required double longitude,
+    required String apiKey,
+  }) async {
+    if (kIsWeb || !Platform.isAndroid) {
+      return null;
+    }
+    try {
+      return await _channel.invokeMethod<String>('reverseGeocode', {
+        'latitude': latitude,
+        'longitude': longitude,
+        'apiKey': apiKey,
+      });
+    } on PlatformException {
+      return null;
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
+  Future<String?> _reverseGeocodeViaHttp({
     required double latitude,
     required double longitude,
     required String apiKey,
@@ -50,5 +101,13 @@ class TencentMapService {
         client.close();
       }
     }
+  }
+
+  String? _normalizeResult(String? raw) {
+    final normalized = raw?.trim();
+    if (normalized == null || normalized.isEmpty) {
+      return null;
+    }
+    return normalized;
   }
 }

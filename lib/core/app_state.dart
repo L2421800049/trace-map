@@ -49,6 +49,8 @@ class AppState extends AppStateBase {
     required MapProvider mapProvider,
     required String? tencentMapKey,
     required String? customLogoUrl,
+    required TencentMapService tencentMapService,
+    Map<String, String>? reverseGeocodeCache,
   }) : _settingsStore = settingsStore,
        _trackRepository = trackRepository,
        _deviceRepository = deviceRepository,
@@ -56,11 +58,15 @@ class AppState extends AppStateBase {
        _retentionDays = retentionDays,
        _mapProvider = mapProvider,
        _tencentMapKey = tencentMapKey,
-       _customLogoUrl = customLogoUrl;
+       _customLogoUrl = customLogoUrl,
+       _tencentMapService = tencentMapService,
+       _reverseGeocodeCache =
+           reverseGeocodeCache ?? <String, String>{};
 
   final SettingsStore _settingsStore;
   final TrackRepository _trackRepository;
   final DeviceInfoRepository _deviceRepository;
+  final TencentMapService _tencentMapService;
 
   Timer? _timer;
   bool _collecting = false;
@@ -74,6 +80,7 @@ class AppState extends AppStateBase {
   String? _tencentMapKey;
   String? _customLogoUrl;
   List<TrackRecord> _trackRecords = const [];
+  final Map<String, String> _reverseGeocodeCache;
 
   static const _tencentKeySetting = 'tencent_map_key';
 
@@ -81,6 +88,7 @@ class AppState extends AppStateBase {
     final settingsStore = await SharedPrefsSettingsStore.create();
     final trackRepository = await TrackRepository.open();
     final deviceRepository = PluginDeviceInfoRepository();
+    const tencentMapService = TencentMapService();
 
     final samplingInterval =
         await settingsStore.readInterval() ?? SamplingSettings.defaultInterval;
@@ -102,12 +110,41 @@ class AppState extends AppStateBase {
       mapProvider: mapProvider,
       tencentMapKey: tencentKey,
       customLogoUrl: customLogoUrl,
+      tencentMapService: tencentMapService,
+      reverseGeocodeCache: <String, String>{},
     );
 
     state._mapLogs = await trackRepository.fetchMapLogs();
 
     await state._loadInitialData();
     return state;
+  }
+
+  @visibleForTesting
+  static AppState createForTest({
+    required SettingsStore settingsStore,
+    required TrackRepository trackRepository,
+    required DeviceInfoRepository deviceRepository,
+    required TencentMapService tencentMapService,
+    int samplingIntervalSeconds = SamplingSettings.defaultInterval,
+    int retentionDays = SamplingSettings.defaultRetentionDays,
+    MapProvider mapProvider = MapProvider.defaultMap,
+    String? tencentMapKey,
+    String? customLogoUrl,
+    Map<String, String>? reverseGeocodeCache,
+  }) {
+    return AppState._(
+      settingsStore: settingsStore,
+      trackRepository: trackRepository,
+      deviceRepository: deviceRepository,
+      samplingIntervalSeconds: samplingIntervalSeconds,
+      retentionDays: retentionDays,
+      mapProvider: mapProvider,
+      tencentMapKey: tencentMapKey,
+      customLogoUrl: customLogoUrl,
+      tencentMapService: tencentMapService,
+      reverseGeocodeCache: reverseGeocodeCache,
+    );
   }
 
   Future<void> _loadInitialData() async {
@@ -267,8 +304,12 @@ class AppState extends AppStateBase {
     final first = samples.first;
     final last = samples.last;
 
-    final startName = await _resolvePlaceName(first);
-    final endName = await _resolvePlaceName(last);
+    final names = await Future.wait<String>([
+      _resolvePlaceName(first),
+      _resolvePlaceName(last),
+    ]);
+    final startName = names[0];
+    final endName = names[1];
 
     final record = TrackRecord(
       startTime: first.timestamp,
@@ -326,22 +367,41 @@ class AppState extends AppStateBase {
     return '${sample.latitude.toStringAsFixed(5)}, ${sample.longitude.toStringAsFixed(5)}';
   }
 
+  String _cacheKeyForSample(LocationSample sample) {
+    return '${sample.latitude.toStringAsFixed(6)},${sample.longitude.toStringAsFixed(6)}';
+  }
+
   Future<String> _resolvePlaceName(LocationSample sample) async {
+    final cacheKey = _cacheKeyForSample(sample);
+    final cached = _reverseGeocodeCache[cacheKey];
+    if (cached != null) {
+      return cached;
+    }
+
     final key = _tencentMapKey;
     if (key == null || key.isEmpty) {
-      return _formatCoordinateLabel(sample);
+      final fallback = _formatCoordinateLabel(sample);
+      _reverseGeocodeCache[cacheKey] = fallback;
+      return fallback;
     }
-    final service = TencentMapService();
     final projected = wgs84ToGcj02(sample.latitude, sample.longitude);
-    final result = await service.reverseGeocode(
+    final result = await _tencentMapService.reverseGeocode(
       latitude: projected.latitude,
       longitude: projected.longitude,
       apiKey: key,
     );
-    if (result == null || result.isEmpty) {
-      return _formatCoordinateLabel(sample);
-    }
-    return result;
+    final normalized = result?.trim();
+    final resolved =
+        (normalized == null || normalized.isEmpty)
+            ? _formatCoordinateLabel(sample)
+            : normalized;
+    _reverseGeocodeCache[cacheKey] = resolved;
+    return resolved;
+  }
+
+  @visibleForTesting
+  Future<String> resolvePlaceNameForTest(LocationSample sample) {
+    return _resolvePlaceName(sample);
   }
 
   @override
@@ -354,6 +414,7 @@ class AppState extends AppStateBase {
       _tencentMapKey = trimmed;
       await _trackRepository.upsertSetting(_tencentKeySetting, trimmed);
     }
+    _reverseGeocodeCache.clear();
     notifyListeners();
   }
 

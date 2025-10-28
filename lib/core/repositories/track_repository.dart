@@ -4,6 +4,7 @@ import 'package:sqflite/sqflite.dart';
 
 import '../models/location_sample.dart';
 import '../models/map_log_entry.dart';
+import '../models/track_record.dart';
 
 class TrackRepository {
   TrackRepository._(this._db);
@@ -47,6 +48,20 @@ class TrackRepository {
             value TEXT NOT NULL
           )
         ''');
+        await database.execute('''
+          CREATE TABLE track_records(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            start_time INTEGER NOT NULL,
+            end_time INTEGER NOT NULL,
+            start_name TEXT NOT NULL,
+            end_name TEXT NOT NULL,
+            start_lat REAL NOT NULL,
+            start_lng REAL NOT NULL,
+            end_lat REAL NOT NULL,
+            end_lng REAL NOT NULL,
+            points_json TEXT NOT NULL
+          )
+        ''');
       },
       onOpen: (database) async {
         await database.execute('''
@@ -60,6 +75,20 @@ class TrackRepository {
           CREATE TABLE IF NOT EXISTS settings(
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL
+          )
+        ''');
+        await database.execute('''
+          CREATE TABLE IF NOT EXISTS track_records(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            start_time INTEGER NOT NULL,
+            end_time INTEGER NOT NULL,
+            start_name TEXT NOT NULL,
+            end_name TEXT NOT NULL,
+            start_lat REAL NOT NULL,
+            start_lng REAL NOT NULL,
+            end_lat REAL NOT NULL,
+            end_lng REAL NOT NULL,
+            points_json TEXT NOT NULL
           )
         ''');
       },
@@ -99,7 +128,7 @@ class TrackRepository {
   }
 
   Future<List<MapLogEntry>> fetchMapLogs() async {
-    final rows = await _db.query('map_logs', orderBy: 'timestamp ASC');
+    final rows = await _db.query('map_logs', orderBy: 'timestamp DESC');
     return rows.map((row) => MapLogEntry.fromMap(row)).toList();
   }
 
@@ -129,5 +158,22 @@ class TrackRepository {
 
   Future<void> deleteSetting(String key) async {
     await _db.delete('settings', where: 'key = ?', whereArgs: [key]);
+  }
+
+  Future<int> insertTrackRecord(TrackRecord record) async {
+    return _db.insert(
+      'track_records',
+      record.toMap(),
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
+
+  Future<List<TrackRecord>> fetchTrackRecords() async {
+    final rows = await _db.query('track_records', orderBy: 'start_time DESC');
+    return rows.map((row) => TrackRecord.fromMap(row)).toList();
+  }
+
+  Future<void> deleteTrackRecord(int id) async {
+    await _db.delete('track_records', where: 'id = ?', whereArgs: [id]);
   }
 }

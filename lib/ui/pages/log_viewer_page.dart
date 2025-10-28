@@ -15,6 +15,46 @@ class LogViewerPage extends StatelessWidget {
         return Scaffold(
           appBar: AppBar(
             title: const Text('地图日志'),
+            actions: [
+              if (logs.isNotEmpty)
+                IconButton(
+                  tooltip: '清空日志',
+                  onPressed: () async {
+                    final shouldClear =
+                        await showDialog<bool>(
+                          context: context,
+                          builder: (context) {
+                            return AlertDialog(
+                              title: const Text('清空地图日志'),
+                              content: const Text('确定要删除所有地图日志记录吗？此操作不可恢复。'),
+                              actions: [
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.of(context).pop(false),
+                                  child: const Text('取消'),
+                                ),
+                                FilledButton(
+                                  onPressed: () =>
+                                      Navigator.of(context).pop(true),
+                                  child: const Text('清空'),
+                                ),
+                              ],
+                            );
+                          },
+                        ) ??
+                        false;
+                    if (shouldClear) {
+                      await state.clearMapLogs();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('地图日志已清空')),
+                        );
+                      }
+                    }
+                  },
+                  icon: const Icon(Icons.delete_sweep_outlined),
+                ),
+            ],
           ),
           body: logs.isEmpty
               ? const _EmptyLogs()
@@ -41,10 +81,7 @@ class _EmptyLogs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Text(
-        '暂无地图日志记录',
-        style: Theme.of(context).textTheme.bodyMedium,
-      ),
+      child: Text('暂无地图日志记录', style: Theme.of(context).textTheme.bodyMedium),
     );
   }
 }

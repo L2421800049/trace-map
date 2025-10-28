@@ -7,9 +7,11 @@ import 'models/device_snapshot.dart';
 import 'models/location_sample.dart';
 import 'models/map_provider.dart';
 import 'models/map_log_entry.dart';
+import 'models/track_record.dart';
 import 'repositories/device_info_repository.dart';
 import 'repositories/track_repository.dart';
 import 'services/settings_store.dart';
+import 'services/tencent_map_service.dart';
 
 abstract class AppStateBase extends ChangeNotifier {
   DeviceSnapshot? get latestSnapshot;
@@ -20,6 +22,7 @@ abstract class AppStateBase extends ChangeNotifier {
   MapProvider get mapProvider;
   UnmodifiableListView<MapLogEntry> get mapLogs;
   String? get tencentMapKey;
+  UnmodifiableListView<TrackRecord> get trackRecords;
 
   Future<void> collectNow();
   Future<void> updateSamplingInterval(int seconds);
@@ -27,6 +30,9 @@ abstract class AppStateBase extends ChangeNotifier {
   Future<void> clearHistory();
   Future<void> updateMapProvider(MapProvider provider);
   void addMapLog(MapLogEntry entry);
+  Future<void> clearMapLogs();
+  Future<TrackRecord?> saveCurrentTrackRecord();
+  Future<void> refreshTrackRecords();
   Future<void> updateTencentMapKey(String? key);
 }
 
@@ -61,6 +67,7 @@ class AppState extends AppStateBase {
   MapProvider _mapProvider;
   List<MapLogEntry> _mapLogs = const [];
   String? _tencentMapKey;
+  List<TrackRecord> _trackRecords = const [];
 
   static const _tencentKeySetting = 'tencent_map_key';
 
@@ -108,6 +115,7 @@ class AppState extends AppStateBase {
         retrievedAt: last.timestamp,
       );
     }
+    _trackRecords = await _trackRepository.fetchTrackRecords();
     await collectNow();
     _startTimer();
   }
@@ -207,6 +215,10 @@ class AppState extends AppStateBase {
   String? get tencentMapKey => _tencentMapKey;
 
   @override
+  UnmodifiableListView<TrackRecord> get trackRecords =>
+      UnmodifiableListView(_trackRecords);
+
+  @override
   UnmodifiableListView<MapLogEntry> get mapLogs =>
       UnmodifiableListView(_mapLogs);
 
@@ -222,9 +234,78 @@ class AppState extends AppStateBase {
 
   @override
   void addMapLog(MapLogEntry entry) {
-    _mapLogs = [..._mapLogs, entry];
+    _mapLogs = [entry, ..._mapLogs];
     unawaited(_trackRepository.insertMapLog(entry));
     notifyListeners();
+  }
+
+  @override
+  Future<void> clearMapLogs() async {
+    await _trackRepository.clearMapLogs();
+    _mapLogs = const [];
+    notifyListeners();
+  }
+
+  @override
+  Future<TrackRecord?> saveCurrentTrackRecord() async {
+    if (_samples.isEmpty) {
+      return null;
+    }
+
+    final samples = List<LocationSample>.from(_samples);
+    final first = samples.first;
+    final last = samples.last;
+
+    final startName = await _resolvePlaceName(first);
+    final endName = await _resolvePlaceName(last);
+
+    final record = TrackRecord(
+      startTime: first.timestamp,
+      endTime: last.timestamp,
+      startName: startName,
+      endName: endName,
+      startLatitude: first.latitude,
+      startLongitude: first.longitude,
+      endLatitude: last.latitude,
+      endLongitude: last.longitude,
+      samples: samples,
+    );
+
+    final id = await _trackRepository.insertTrackRecord(record);
+    await refreshTrackRecords();
+
+    try {
+      return _trackRecords.firstWhere((element) => element.id == id);
+    } on StateError {
+      return null;
+    }
+  }
+
+  @override
+  Future<void> refreshTrackRecords() async {
+    _trackRecords = await _trackRepository.fetchTrackRecords();
+    notifyListeners();
+  }
+
+  String _formatCoordinateLabel(LocationSample sample) {
+    return '${sample.latitude.toStringAsFixed(5)}, ${sample.longitude.toStringAsFixed(5)}';
+  }
+
+  Future<String> _resolvePlaceName(LocationSample sample) async {
+    final key = _tencentMapKey;
+    if (key == null || key.isEmpty) {
+      return _formatCoordinateLabel(sample);
+    }
+    final service = TencentMapService();
+    final result = await service.reverseGeocode(
+      latitude: sample.latitude,
+      longitude: sample.longitude,
+      apiKey: key,
+    );
+    if (result == null || result.isEmpty) {
+      return _formatCoordinateLabel(sample);
+    }
+    return result;
   }
 
   @override

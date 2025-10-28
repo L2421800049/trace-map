@@ -8,11 +8,14 @@ import 'package:myapp/core/models/device_snapshot.dart';
 import 'package:myapp/core/models/location_sample.dart';
 import 'package:myapp/core/models/map_provider.dart';
 import 'package:myapp/core/models/map_log_entry.dart';
+import 'package:myapp/core/models/track_record.dart';
 import 'package:myapp/ui/app_state_scope.dart';
 import 'package:myapp/ui/pages/device_info_page.dart';
 
 void main() {
-  testWidgets('Device info page renders snapshot details', (WidgetTester tester) async {
+  testWidgets('Device info page renders snapshot details', (
+    WidgetTester tester,
+  ) async {
     final sample = LocationSample(
       timestamp: DateTime(2024, 1, 1, 12, 0, 0),
       latitude: 39.9075,
@@ -28,11 +31,7 @@ void main() {
     );
 
     final snapshot = DeviceSnapshot(
-      deviceDetails: const {
-        '系统': 'Android 14',
-        '品牌': 'Google',
-        '型号': 'Pixel',
-      },
+      deviceDetails: const {'系统': 'Android 14', '品牌': 'Google', '型号': 'Pixel'},
       position: Position(
         longitude: sample.longitude,
         latitude: sample.latitude,
@@ -50,17 +49,12 @@ void main() {
       retrievedAt: sample.timestamp,
     );
 
-    final fakeState = FakeAppState(
-      snapshot: snapshot,
-      samples: [sample],
-    );
+    final fakeState = FakeAppState(snapshot: snapshot, samples: [sample]);
 
     await tester.pumpWidget(
       AppStateScope(
         notifier: fakeState,
-        child: const MaterialApp(
-          home: DeviceInfoPage(),
-        ),
+        child: const MaterialApp(home: DeviceInfoPage()),
       ),
     );
 
@@ -78,8 +72,8 @@ class FakeAppState extends AppStateBase {
   FakeAppState({
     required DeviceSnapshot snapshot,
     required List<LocationSample> samples,
-  })  : _snapshot = snapshot,
-        _samples = List<LocationSample>.of(samples);
+  }) : _snapshot = snapshot,
+       _samples = List<LocationSample>.of(samples);
 
   final DeviceSnapshot? _snapshot;
   List<LocationSample> _samples;
@@ -89,6 +83,7 @@ class FakeAppState extends AppStateBase {
   MapProvider _mapProvider = MapProvider.defaultMap;
   List<MapLogEntry> _mapLogs = const [];
   String? _tencentMapKey;
+  final List<TrackRecord> _trackRecords = const [];
 
   @override
   DeviceSnapshot? get latestSnapshot => _snapshot;
@@ -115,6 +110,10 @@ class FakeAppState extends AppStateBase {
 
   @override
   String? get tencentMapKey => _tencentMapKey;
+
+  @override
+  UnmodifiableListView<TrackRecord> get trackRecords =>
+      UnmodifiableListView(_trackRecords);
 
   @override
   Future<void> collectNow() async {
@@ -151,7 +150,7 @@ class FakeAppState extends AppStateBase {
 
   @override
   void addMapLog(MapLogEntry entry) {
-    _mapLogs = [..._mapLogs, entry];
+    _mapLogs = [entry, ..._mapLogs];
     notifyListeners();
   }
 
@@ -160,4 +159,16 @@ class FakeAppState extends AppStateBase {
     _tencentMapKey = key;
     notifyListeners();
   }
+
+  @override
+  Future<void> clearMapLogs() async {
+    _mapLogs = const [];
+    notifyListeners();
+  }
+
+  @override
+  Future<TrackRecord?> saveCurrentTrackRecord() async => null;
+
+  @override
+  Future<void> refreshTrackRecords() async {}
 }

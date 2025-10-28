@@ -12,6 +12,7 @@ import '../../core/models/map_log_entry.dart';
 import '../../core/utils/coordinate_transform.dart';
 import '../../core/utils/formatting.dart';
 import 'settings_page.dart';
+import 'track_records_page.dart';
 import '../app_state_scope.dart';
 
 const _tencentMapBaseUrl = 'https://tencent-map.flutter-app.local/';
@@ -24,6 +25,8 @@ class MapPage extends StatefulWidget {
 }
 
 class _MapPageState extends State<MapPage> {
+  bool _savingTrack = false;
+
   @override
   Widget build(BuildContext context) {
     return AppStateBuilder(
@@ -68,6 +71,60 @@ class _MapPageState extends State<MapPage> {
                             '时间范围：'
                             '${formatTimestamp(samples.first.timestamp)}'
                             ' - ${formatTimestamp(samples.last.timestamp)}',
+                          ),
+                          const SizedBox(height: 12),
+                          Wrap(
+                            spacing: 12,
+                            runSpacing: 12,
+                            children: [
+                              FilledButton.icon(
+                                onPressed: samples.isEmpty || _savingTrack
+                                    ? null
+                                    : () async {
+                                        final messenger =
+                                            ScaffoldMessenger.of(context);
+                                        setState(() => _savingTrack = true);
+                                        late String feedback;
+                                        try {
+                                          final record =
+                                              await appState.saveCurrentTrackRecord();
+                                          feedback = record != null
+                                              ? '已保存轨迹：${record.title}'
+                                              : '当前没有可保存的轨迹数据';
+                                        } catch (error) {
+                                          feedback = '保存轨迹失败：$error';
+                                        }
+                                        if (!mounted) {
+                                          return;
+                                        }
+                                        setState(() => _savingTrack = false);
+                                        messenger.showSnackBar(
+                                          SnackBar(content: Text(feedback)),
+                                        );
+                                      },
+                                icon: _savingTrack
+                                    ? const SizedBox(
+                                        width: 18,
+                                        height: 18,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2,
+                                        ),
+                                      )
+                                    : const Icon(Icons.save_outlined),
+                                label: const Text('保存当前轨迹'),
+                              ),
+                              OutlinedButton.icon(
+                                onPressed: () {
+                                  Navigator.of(context).push(
+                                    MaterialPageRoute(
+                                      builder: (_) => const TrackRecordsPage(),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(Icons.route_outlined),
+                                label: const Text('查看轨迹记录'),
+                              ),
+                            ],
                           ),
                         ],
                       ),

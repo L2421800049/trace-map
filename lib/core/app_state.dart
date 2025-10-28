@@ -12,6 +12,7 @@ import 'repositories/device_info_repository.dart';
 import 'repositories/track_repository.dart';
 import 'services/settings_store.dart';
 import 'services/tencent_map_service.dart';
+import 'utils/coordinate_transform.dart';
 
 abstract class AppStateBase extends ChangeNotifier {
   DeviceSnapshot? get latestSnapshot;
@@ -285,8 +286,24 @@ class AppState extends AppStateBase {
     await refreshTrackRecords();
 
     try {
-      return _trackRecords.firstWhere((element) => element.id == id);
-    } on StateError {
+      final saved =
+          _trackRecords.firstWhere((element) => element.id == id, orElse: () => TrackRecord(
+                id: id,
+                startTime: record.startTime,
+                endTime: record.endTime,
+                startName: record.startName,
+                endName: record.endName,
+                startLatitude: record.startLatitude,
+                startLongitude: record.startLongitude,
+                endLatitude: record.endLatitude,
+                endLongitude: record.endLongitude,
+                samples: record.samples,
+              ));
+      await _trackRepository.deleteAll();
+      _samples = const [];
+      notifyListeners();
+      return saved;
+    } catch (_) {
       return null;
     }
   }
@@ -315,9 +332,10 @@ class AppState extends AppStateBase {
       return _formatCoordinateLabel(sample);
     }
     final service = TencentMapService();
+    final projected = wgs84ToGcj02(sample.latitude, sample.longitude);
     final result = await service.reverseGeocode(
-      latitude: sample.latitude,
-      longitude: sample.longitude,
+      latitude: projected.latitude,
+      longitude: projected.longitude,
       apiKey: key,
     );
     if (result == null || result.isEmpty) {

@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:webview_flutter/webview_flutter.dart';
@@ -246,6 +248,7 @@ class _TencentMapViewState extends State<_TencentMapView> {
   bool _pendingUpdate = false;
   String? _latestPointsJson;
   bool _loggedProjectionHint = false;
+  Timer? _updateDebounceTimer;
 
   @override
   void initState() {
@@ -271,9 +274,12 @@ class _TencentMapViewState extends State<_TencentMapView> {
       return;
     }
     if (!listEquals(oldWidget.samples, widget.samples)) {
-      _pushLog('样本更新：${widget.samples.length} 个点');
-      _latestPointsJson = _encodePoints(widget.samples);
-      _scheduleMapUpdate();
+      final nextPointsJson = _encodePoints(widget.samples);
+      if (nextPointsJson != _latestPointsJson) {
+        _pushLog('样本更新：${widget.samples.length} 个点');
+        _latestPointsJson = nextPointsJson;
+        _scheduleMapUpdate();
+      }
     }
   }
 
@@ -289,7 +295,22 @@ class _TencentMapViewState extends State<_TencentMapView> {
 
   void _pushLog(String message) {
     final entry = MapLogEntry(timestamp: DateTime.now(), message: message);
-    widget.onLogEntry(entry);
+    if (!mounted) {
+      return;
+    }
+    void dispatch() {
+      if (!mounted) {
+        return;
+      }
+      widget.onLogEntry(entry);
+    }
+
+    final scheduler = SchedulerBinding.instance;
+    if (scheduler.schedulerPhase == SchedulerPhase.idle) {
+      dispatch();
+      return;
+    }
+    scheduler.addPostFrameCallback((_) => dispatch());
   }
 
   void _loadInitialContent(List<LocationSample> samples) {
@@ -299,6 +320,8 @@ class _TencentMapViewState extends State<_TencentMapView> {
     _pendingUpdate = true;
     _hasLoadedContent = false;
     _loggedProjectionHint = false;
+    _updateDebounceTimer?.cancel();
+    _updateDebounceTimer = null;
     final html =
         '''
 <!DOCTYPE html>
@@ -546,7 +569,11 @@ class _TencentMapViewState extends State<_TencentMapView> {
       return;
     }
     _pendingUpdate = true;
-    _flushPendingUpdate();
+    _updateDebounceTimer ??=
+        Timer(const Duration(milliseconds: 400), () {
+          _updateDebounceTimer = null;
+          _flushPendingUpdate();
+        });
   }
 
   void _flushPendingUpdate() {
@@ -563,6 +590,12 @@ class _TencentMapViewState extends State<_TencentMapView> {
     ) {
       _pushLog('更新轨迹失败: $error');
     });
+  }
+
+  @override
+  void dispose() {
+    _updateDebounceTimer?.cancel();
+    super.dispose();
   }
 
   @override

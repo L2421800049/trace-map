@@ -6,6 +6,8 @@ import 'package:myapp/core/models/location_sample.dart';
 import 'package:myapp/core/models/map_log_entry.dart';
 import 'package:myapp/core/models/map_provider.dart';
 import 'package:myapp/core/models/track_record.dart';
+import 'package:myapp/core/models/object_store_config.dart';
+import 'package:myapp/core/models/storage_mode.dart';
 import 'package:myapp/core/repositories/device_info_repository.dart';
 import 'package:myapp/core/repositories/track_repository.dart';
 import 'package:myapp/core/services/settings_store.dart';
@@ -90,6 +92,8 @@ class FakeSettingsStore implements SettingsStore {
   int? _retentionDays;
   String? _mapProvider;
   String? _logoUrl;
+  StorageMode _storageMode = StorageMode.local;
+  ObjectStoreConfig? _objectStoreConfig;
 
   @override
   Future<int?> readInterval() async => _interval;
@@ -122,6 +126,23 @@ class FakeSettingsStore implements SettingsStore {
   Future<void> writeCustomLogoUrl(String? url) async {
     _logoUrl = url;
   }
+
+  @override
+  Future<StorageMode> readStorageMode() async => _storageMode;
+
+  @override
+  Future<void> writeStorageMode(StorageMode mode) async {
+    _storageMode = mode;
+  }
+
+  @override
+  Future<ObjectStoreConfig?> readObjectStoreConfig() async =>
+      _objectStoreConfig;
+
+  @override
+  Future<void> writeObjectStoreConfig(ObjectStoreConfig? config) async {
+    _objectStoreConfig = config;
+  }
 }
 
 class FakeTrackRepository implements TrackRepository {
@@ -130,6 +151,7 @@ class FakeTrackRepository implements TrackRepository {
   final Map<String, String> _settings = {};
   final List<TrackRecord> _records = [];
   int _nextId = 1;
+  final String _dbPath = '/tmp/device_track.sqlite';
 
   @override
   Future<void> insertSample(LocationSample sample) async {
@@ -206,6 +228,12 @@ class FakeTrackRepository implements TrackRepository {
   Future<void> deleteTrackRecord(int id) async {
     _records.removeWhere((record) => record.id == id);
   }
+
+  @override
+  String get databasePath => _dbPath;
+
+  @override
+  Future<void> replaceWith(String sourcePath) async {}
 }
 
 class FakeDeviceInfoRepository implements DeviceInfoRepository {

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:developer' as developer;
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -18,6 +19,10 @@ class TencentMapService {
     required double longitude,
     required String apiKey,
   }) async {
+    developer.log(
+      'reverseGeocode request lat=$latitude lng=$longitude',
+      name: 'TencentMapService',
+    );
     final nativeResult = _normalizeResult(
       await _reverseGeocodeViaSdk(
         latitude: latitude,
@@ -26,8 +31,16 @@ class TencentMapService {
       ),
     );
     if (nativeResult != null) {
+      developer.log(
+        'reverseGeocode success via SDK: $nativeResult',
+        name: 'TencentMapService',
+      );
       return nativeResult;
     }
+    developer.log(
+      'reverseGeocode falling back to HTTP for lat=$latitude lng=$longitude',
+      name: 'TencentMapService',
+    );
     return _normalizeResult(
       await _reverseGeocodeViaHttp(
         latitude: latitude,
@@ -43,17 +56,35 @@ class TencentMapService {
     required String apiKey,
   }) async {
     if (kIsWeb || !Platform.isAndroid) {
+      developer.log(
+        'Skipping native reverseGeocode (platform unsupported)',
+        name: 'TencentMapService',
+      );
       return null;
     }
     try {
+      developer.log(
+        'Invoking native reverseGeocode lat=$latitude lng=$longitude',
+        name: 'TencentMapService',
+      );
       return await _channel.invokeMethod<String>('reverseGeocode', {
         'latitude': latitude,
         'longitude': longitude,
         'apiKey': apiKey,
       });
-    } on PlatformException {
+    } on PlatformException catch (error, stackTrace) {
+      developer.log(
+        'Native reverseGeocode failed: ${error.message}',
+        name: 'TencentMapService',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return null;
     } on MissingPluginException {
+      developer.log(
+        'Native reverseGeocode plugin missing',
+        name: 'TencentMapService',
+      );
       return null;
     }
   }
@@ -69,8 +100,16 @@ class TencentMapService {
         'location': '$latitude,$longitude',
         'key': apiKey,
       });
+      developer.log(
+        'HTTP reverseGeocode GET $uri',
+        name: 'TencentMapService',
+      );
       final response = await client.get(uri);
       if (response.statusCode != 200) {
+        developer.log(
+          'HTTP reverseGeocode non-200: ${response.statusCode}',
+          name: 'TencentMapService',
+        );
         return null;
       }
       final Map<String, dynamic> data =
@@ -90,11 +129,25 @@ class TencentMapService {
         }
         final address = result['address'] as String?;
         if (address != null && address.isNotEmpty) {
+          developer.log(
+            'HTTP reverseGeocode success: $address',
+            name: 'TencentMapService',
+          );
           return address;
         }
       }
+      developer.log(
+        'HTTP reverseGeocode returned status=${data['status']} without address',
+        name: 'TencentMapService',
+      );
       return null;
-    } catch (_) {
+    } catch (error, stackTrace) {
+      developer.log(
+        'HTTP reverseGeocode threw',
+        name: 'TencentMapService',
+        error: error,
+        stackTrace: stackTrace,
+      );
       return null;
     } finally {
       if (_client == null) {

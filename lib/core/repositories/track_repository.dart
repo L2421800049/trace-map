@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
@@ -7,15 +9,22 @@ import '../models/map_log_entry.dart';
 import '../models/track_record.dart';
 
 class TrackRepository {
-  TrackRepository._(this._db);
+  TrackRepository._(this._dbPath);
 
-  final Database _db;
+  late Database _db;
+  final String _dbPath;
 
   static Future<TrackRepository> open() async {
     final directory = await getApplicationDocumentsDirectory();
     final dbPath = path.join(directory.path, 'device_track.sqlite');
-    final db = await openDatabase(
-      dbPath,
+    final repository = TrackRepository._(dbPath);
+    await repository._openDatabase();
+    return repository;
+  }
+
+  Future<void> _openDatabase() async {
+    _db = await openDatabase(
+      _dbPath,
       version: 1,
       onCreate: (database, version) async {
         await database.execute('''
@@ -93,7 +102,6 @@ class TrackRepository {
         ''');
       },
     );
-    return TrackRepository._(db);
   }
 
   Future<void> insertSample(LocationSample sample) async {
@@ -175,5 +183,24 @@ class TrackRepository {
 
   Future<void> deleteTrackRecord(int id) async {
     await _db.delete('track_records', where: 'id = ?', whereArgs: [id]);
+  }
+
+  String get databasePath => _dbPath;
+
+  Future<void> replaceWith(String sourcePath) async {
+    await _db.close();
+    final sourceFile = File(sourcePath);
+    if (!await sourceFile.exists()) {
+      throw Exception('Backup file not found at $sourcePath');
+    }
+    final destinationFile = File(_dbPath);
+    if (!await destinationFile.parent.exists()) {
+      await destinationFile.parent.create(recursive: true);
+    }
+    if (await destinationFile.exists()) {
+      await destinationFile.delete();
+    }
+    await sourceFile.copy(destinationFile.path);
+    await _openDatabase();
   }
 }

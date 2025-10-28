@@ -46,6 +46,7 @@ dependencies:
   flutter_svg: ^2.0.9
   http: ^1.2.1
   shared_preferences: ^2.2.2
+  minio: ^3.5.8
 
 dev_dependencies:
   flutter_test:

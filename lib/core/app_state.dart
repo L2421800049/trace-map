@@ -1,5 +1,7 @@
 import 'dart:async' show Timer, unawaited;
 import 'dart:collection';
+import 'dart:developer' as developer;
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 
@@ -7,10 +9,13 @@ import 'models/device_snapshot.dart';
 import 'models/location_sample.dart';
 import 'models/map_provider.dart';
 import 'models/map_log_entry.dart';
+import 'models/object_store_config.dart';
+import 'models/storage_mode.dart';
 import 'models/track_record.dart';
 import 'repositories/device_info_repository.dart';
 import 'repositories/track_repository.dart';
 import 'services/settings_store.dart';
+import 'services/object_store_service.dart';
 import 'services/tencent_map_service.dart';
 import 'utils/coordinate_transform.dart';
 
@@ -25,6 +30,8 @@ abstract class AppStateBase extends ChangeNotifier {
   String? get tencentMapKey;
   UnmodifiableListView<TrackRecord> get trackRecords;
   String? get customLogoUrl;
+  StorageMode get storageMode;
+  ObjectStoreConfig? get objectStoreConfig;
 
   Future<void> collectNow();
   Future<void> updateSamplingInterval(int seconds);
@@ -37,6 +44,11 @@ abstract class AppStateBase extends ChangeNotifier {
   Future<void> refreshTrackRecords();
   Future<void> updateTencentMapKey(String? key);
   Future<void> updateCustomLogoUrl(String? url);
+  Future<void> updateStorageMode(StorageMode mode);
+  Future<void> updateObjectStoreConfig(ObjectStoreConfig? config);
+  Future<void> uploadDatabaseBackup();
+  Future<List<String>> listObjectStoreBackups();
+  Future<void> restoreDatabaseFromObjectStore(String objectKey);
 }
 
 class AppState extends AppStateBase {
@@ -50,6 +62,9 @@ class AppState extends AppStateBase {
     required String? tencentMapKey,
     required String? customLogoUrl,
     required TencentMapService tencentMapService,
+    required StorageMode storageMode,
+    required ObjectStoreConfig? objectStoreConfig,
+    required ObjectStoreService objectStoreService,
     Map<String, String>? reverseGeocodeCache,
   }) : _settingsStore = settingsStore,
        _trackRepository = trackRepository,
@@ -60,6 +75,9 @@ class AppState extends AppStateBase {
        _tencentMapKey = tencentMapKey,
        _customLogoUrl = customLogoUrl,
        _tencentMapService = tencentMapService,
+       _storageMode = storageMode,
+       _objectStoreConfig = objectStoreConfig,
+       _objectStoreService = objectStoreService,
        _reverseGeocodeCache =
            reverseGeocodeCache ?? <String, String>{};
 
@@ -67,6 +85,7 @@ class AppState extends AppStateBase {
   final TrackRepository _trackRepository;
   final DeviceInfoRepository _deviceRepository;
   final TencentMapService _tencentMapService;
+  final ObjectStoreService _objectStoreService;
 
   Timer? _timer;
   bool _collecting = false;
@@ -81,6 +100,8 @@ class AppState extends AppStateBase {
   String? _customLogoUrl;
   List<TrackRecord> _trackRecords = const [];
   final Map<String, String> _reverseGeocodeCache;
+  StorageMode _storageMode;
+  ObjectStoreConfig? _objectStoreConfig;
 
   static const _tencentKeySetting = 'tencent_map_key';
 
@@ -89,6 +110,7 @@ class AppState extends AppStateBase {
     final trackRepository = await TrackRepository.open();
     final deviceRepository = PluginDeviceInfoRepository();
     const tencentMapService = TencentMapService();
+    const objectStoreService = ObjectStoreService();
 
     final samplingInterval =
         await settingsStore.readInterval() ?? SamplingSettings.defaultInterval;
@@ -100,6 +122,8 @@ class AppState extends AppStateBase {
     );
     final tencentKey = await trackRepository.readSetting(_tencentKeySetting);
     final customLogoUrl = await settingsStore.readCustomLogoUrl();
+    final storageMode = await settingsStore.readStorageMode();
+    final objectStoreConfig = await settingsStore.readObjectStoreConfig();
 
     final state = AppState._(
       settingsStore: settingsStore,
@@ -111,10 +135,11 @@ class AppState extends AppStateBase {
       tencentMapKey: tencentKey,
       customLogoUrl: customLogoUrl,
       tencentMapService: tencentMapService,
+      storageMode: storageMode,
+      objectStoreConfig: objectStoreConfig,
+      objectStoreService: objectStoreService,
       reverseGeocodeCache: <String, String>{},
     );
-
-    state._mapLogs = await trackRepository.fetchMapLogs();
 
     await state._loadInitialData();
     return state;
@@ -126,12 +151,15 @@ class AppState extends AppStateBase {
     required TrackRepository trackRepository,
     required DeviceInfoRepository deviceRepository,
     required TencentMapService tencentMapService,
+    ObjectStoreService objectStoreService = const ObjectStoreService(),
     int samplingIntervalSeconds = SamplingSettings.defaultInterval,
     int retentionDays = SamplingSettings.defaultRetentionDays,
     MapProvider mapProvider = MapProvider.defaultMap,
     String? tencentMapKey,
     String? customLogoUrl,
     Map<String, String>? reverseGeocodeCache,
+    StorageMode storageMode = StorageMode.local,
+    ObjectStoreConfig? objectStoreConfig,
   }) {
     return AppState._(
       settingsStore: settingsStore,
@@ -143,24 +171,16 @@ class AppState extends AppStateBase {
       tencentMapKey: tencentMapKey,
       customLogoUrl: customLogoUrl,
       tencentMapService: tencentMapService,
+      storageMode: storageMode,
+      objectStoreConfig: objectStoreConfig,
+      objectStoreService: objectStoreService,
       reverseGeocodeCache: reverseGeocodeCache,
     );
   }
 
   Future<void> _loadInitialData() async {
     await _enforceRetention();
-    _samples = await _trackRepository.fetchSamples();
-    if (_samples.isNotEmpty) {
-      final deviceDetails = await _deviceRepository.deviceDetails();
-      final last = _samples.last;
-      _latestSnapshot = DeviceSnapshot(
-        deviceDetails: deviceDetails,
-        position: last.toPosition(),
-        locationError: null,
-        retrievedAt: last.timestamp,
-      );
-    }
-    _trackRecords = await _trackRepository.fetchTrackRecords();
+    await _reloadFromDatabase(notify: false);
     await collectNow();
     _startTimer();
   }
@@ -171,6 +191,27 @@ class AppState extends AppStateBase {
       Duration(seconds: _samplingIntervalSeconds),
       (_) => collectNow(),
     );
+  }
+
+  Future<void> _reloadFromDatabase({bool notify = true}) async {
+    _samples = await _trackRepository.fetchSamples();
+    if (_samples.isNotEmpty) {
+      final deviceDetails = await _deviceRepository.deviceDetails();
+      final last = _samples.last;
+      _latestSnapshot = DeviceSnapshot(
+        deviceDetails: deviceDetails,
+        position: last.toPosition(),
+        locationError: null,
+        retrievedAt: last.timestamp,
+      );
+    } else {
+      _latestSnapshot = null;
+    }
+    _trackRecords = await _trackRepository.fetchTrackRecords();
+    _mapLogs = await _trackRepository.fetchMapLogs();
+    if (notify) {
+      notifyListeners();
+    }
   }
 
   Future<void> _performCollection() async {
@@ -235,6 +276,7 @@ class AppState extends AppStateBase {
     await _trackRepository.deleteAll();
     _samples = const [];
     notifyListeners();
+    unawaited(_uploadDatabaseBackup(reason: 'clear-history'));
   }
 
   @override
@@ -262,6 +304,12 @@ class AppState extends AppStateBase {
   @override
   UnmodifiableListView<TrackRecord> get trackRecords =>
       UnmodifiableListView(_trackRecords);
+
+  @override
+  StorageMode get storageMode => _storageMode;
+
+  @override
+  ObjectStoreConfig? get objectStoreConfig => _objectStoreConfig;
 
   @override
   String? get customLogoUrl => _customLogoUrl;
@@ -342,6 +390,7 @@ class AppState extends AppStateBase {
               ));
       await _trackRepository.deleteAll();
       _samples = const [];
+      unawaited(_uploadDatabaseBackup(reason: 'track-save'));
       notifyListeners();
       return saved;
     } catch (_) {
@@ -363,6 +412,79 @@ class AppState extends AppStateBase {
     notifyListeners();
   }
 
+  @override
+  Future<void> updateStorageMode(StorageMode mode) async {
+    if (mode == _storageMode) {
+      return;
+    }
+    _storageMode = mode;
+    await _settingsStore.writeStorageMode(mode);
+    notifyListeners();
+    if (mode == StorageMode.objectStore) {
+      unawaited(_uploadDatabaseBackup(reason: 'mode-change'));
+    }
+  }
+
+  @override
+  Future<void> updateObjectStoreConfig(ObjectStoreConfig? config) async {
+    _objectStoreConfig = config;
+    await _settingsStore.writeObjectStoreConfig(config);
+    notifyListeners();
+  }
+
+  @override
+  Future<void> uploadDatabaseBackup() async {
+    await _uploadDatabaseBackup(
+      reason: 'manual',
+      throwOnError: true,
+    );
+  }
+
+  @override
+  Future<List<String>> listObjectStoreBackups() async {
+    if (_storageMode != StorageMode.objectStore) {
+      throw StateError('存储模式未设置为对象存储');
+    }
+    final config = _objectStoreConfig;
+    if (config == null || !config.isComplete) {
+      throw StateError('对象存储配置不完整');
+    }
+    return _objectStoreService.listBackups(config: config);
+  }
+
+  @override
+  Future<void> restoreDatabaseFromObjectStore(String objectKey) async {
+    if (_storageMode != StorageMode.objectStore) {
+      throw StateError('存储模式未设置为对象存储');
+    }
+    final config = _objectStoreConfig;
+    if (config == null || !config.isComplete) {
+      throw StateError('对象存储配置不完整');
+    }
+    final tempDir = await Directory.systemTemp.createTemp('trace-map-restore');
+    final tempFile = File('${tempDir.path}/device_track_restore.sqlite');
+    try {
+      await _objectStoreService.downloadObject(
+        config: config,
+        objectName: objectKey,
+        destinationPath: tempFile.path,
+      );
+      await _trackRepository.replaceWith(tempFile.path);
+      _reverseGeocodeCache.clear();
+      await _reloadFromDatabase();
+      developer.log(
+        'Database restored from $objectKey',
+        name: 'AppState',
+      );
+    } finally {
+      try {
+        if (await tempDir.exists()) {
+          await tempDir.delete(recursive: true);
+        }
+      } catch (_) {}
+    }
+  }
+
   String _formatCoordinateLabel(LocationSample sample) {
     return '${sample.latitude.toStringAsFixed(5)}, ${sample.longitude.toStringAsFixed(5)}';
   }
@@ -375,6 +497,10 @@ class AppState extends AppStateBase {
     final cacheKey = _cacheKeyForSample(sample);
     final cached = _reverseGeocodeCache[cacheKey];
     if (cached != null) {
+      developer.log(
+        'Using cached place name for $cacheKey -> $cached',
+        name: 'AppState',
+      );
       return cached;
     }
 
@@ -382,6 +508,10 @@ class AppState extends AppStateBase {
     if (key == null || key.isEmpty) {
       final fallback = _formatCoordinateLabel(sample);
       _reverseGeocodeCache[cacheKey] = fallback;
+      developer.log(
+        'Tencent key missing; fallback to coordinates for $cacheKey',
+        name: 'AppState',
+      );
       return fallback;
     }
     final projected = wgs84ToGcj02(sample.latitude, sample.longitude);
@@ -396,7 +526,72 @@ class AppState extends AppStateBase {
             ? _formatCoordinateLabel(sample)
             : normalized;
     _reverseGeocodeCache[cacheKey] = resolved;
+    developer.log(
+      normalized == null || normalized.isEmpty
+          ? 'Reverse geocode fallback to coordinates for $cacheKey'
+          : 'Reverse geocode success for $cacheKey -> $resolved',
+      name: 'AppState',
+    );
     return resolved;
+  }
+
+  Future<void> _uploadDatabaseBackup({
+    required String reason,
+    bool throwOnError = false,
+  }) async {
+    if (_storageMode != StorageMode.objectStore) {
+      if (throwOnError) {
+        throw StateError('Storage mode is not set to objectStore');
+      }
+      return;
+    }
+    final config = _objectStoreConfig;
+    if (config == null || !config.isComplete) {
+      if (throwOnError) {
+        throw StateError('Object storage configuration is incomplete');
+      }
+      developer.log(
+        'Skipping database backup ($reason); configuration incomplete',
+        name: 'AppState',
+      );
+      return;
+    }
+    try {
+      await _objectStoreService.ensureBucket(config: config);
+      final timestamp = DateTime.now()
+          .toIso8601String()
+          .replaceAll(':', '-')
+          .replaceAll('.', '-');
+      final versionedObject = 'backups/device_track_$timestamp.sqlite';
+      await _objectStoreService.uploadDatabaseFile(
+        config: config,
+        filePath: _trackRepository.databasePath,
+        objectName: versionedObject,
+      );
+      await _objectStoreService.uploadDatabaseFile(
+        config: config,
+        filePath: _trackRepository.databasePath,
+        objectName: 'backups/device_track_latest.sqlite',
+      );
+      await _objectStoreService.enforceBackupRetention(
+        config: config,
+        maxBackups: 7,
+      );
+      developer.log(
+        'Database backup uploaded ($reason) as $versionedObject',
+        name: 'AppState',
+      );
+    } catch (error, stackTrace) {
+      developer.log(
+        'Failed to upload database backup ($reason)',
+        name: 'AppState',
+        error: error,
+        stackTrace: stackTrace,
+      );
+      if (throwOnError) {
+        rethrow;
+      }
+    }
   }
 
   @visibleForTesting
@@ -429,7 +624,7 @@ class AppState extends AppStateBase {
 class SamplingSettings {
   static const defaultInterval = 30;
   static const defaultRetentionDays = 7;
-  static const minInterval = 10;
+  static const minInterval = 3;
   static const maxInterval = 3600;
   static const minRetentionDays = 1;
   static const maxRetentionDays = 30;

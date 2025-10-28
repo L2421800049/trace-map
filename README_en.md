@@ -92,7 +92,7 @@ During startup the app:
 2. Opens the SQLite database and reads historical samples and map logs.
 3. Performs an immediate location capture and then schedules periodic sampling (default 30 seconds).
 
-Users can adjust the interval (10–3600 seconds) and retention (1–30 days) on the Settings page.
+Users can adjust the interval (3–3600 seconds) and retention (1–30 days) on the Settings page.
 
 ## Map Rendering Notes
 

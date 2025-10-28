@@ -8,6 +8,8 @@ import 'package:myapp/core/models/device_snapshot.dart';
 import 'package:myapp/core/models/location_sample.dart';
 import 'package:myapp/core/models/map_provider.dart';
 import 'package:myapp/core/models/map_log_entry.dart';
+import 'package:myapp/core/models/object_store_config.dart';
+import 'package:myapp/core/models/storage_mode.dart';
 import 'package:myapp/core/models/track_record.dart';
 import 'package:myapp/ui/app_state_scope.dart';
 import 'package:myapp/ui/pages/device_info_page.dart';
@@ -85,6 +87,8 @@ class FakeAppState extends AppStateBase {
   String? _tencentMapKey;
   String? _customLogoUrl;
   final List<TrackRecord> _trackRecords = const [];
+  StorageMode _storageMode = StorageMode.local;
+  ObjectStoreConfig? _objectStoreConfig;
 
   @override
   DeviceSnapshot? get latestSnapshot => _snapshot;
@@ -118,6 +122,12 @@ class FakeAppState extends AppStateBase {
 
   @override
   String? get customLogoUrl => _customLogoUrl;
+
+  @override
+  StorageMode get storageMode => _storageMode;
+
+  @override
+  ObjectStoreConfig? get objectStoreConfig => _objectStoreConfig;
 
   @override
   Future<void> collectNow() async {
@@ -181,4 +191,25 @@ class FakeAppState extends AppStateBase {
     _customLogoUrl = url;
     notifyListeners();
   }
+
+  @override
+  Future<void> updateStorageMode(StorageMode mode) async {
+    _storageMode = mode;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> updateObjectStoreConfig(ObjectStoreConfig? config) async {
+    _objectStoreConfig = config;
+    notifyListeners();
+  }
+
+  @override
+  Future<void> uploadDatabaseBackup() async {}
+
+  @override
+  Future<List<String>> listObjectStoreBackups() async => const [];
+
+  @override
+  Future<void> restoreDatabaseFromObjectStore(String objectKey) async {}
 }

@@ -1,0 +1,108 @@
+<!-- Logo: 轨迹地图 | Icon + Designed TraceMap Wordmark -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-labelledby="title desc">
+  <title id="title">轨迹地图 · App 标志（含设计化 TraceMap 字标）</title>
+  <desc id="desc">渐变圆角方片背景、地图网格、轨迹线、节点与定位钉；底部加入带“轨迹切带”的 TraceMap 字标，并配轨迹下划线与节点。</desc>
+  <defs>
+    <!-- 背景渐变（蓝→绿） -->
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0EA5E9"/>
+      <stop offset="100%" stop-color="#10B981"/>
+    </linearGradient>
+
+    <!-- 重点色（琥珀→橙），用于节点/强调 -->
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#F97316"/>
+    </linearGradient>
+
+    <!-- “Map” 字样渐变（横向） -->
+    <linearGradient id="wordGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#F59E0B"/>
+      <stop offset="100%" stop-color="#F97316"/>
+    </linearGradient>
+
+    <!-- 阴影 -->
+    <filter id="softShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="4" stdDeviation="12" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+    <filter id="thinShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#000" flood-opacity="0.18"/>
+    </filter>
+  </defs>
+
+  <!-- 圆角底板 -->
+  <rect x="32" y="32" width="960" height="960" rx="220" fill="url(#bg)"/>
+
+  <!-- 地图网格（低不透明度） -->
+  <g opacity="0.16" stroke="#fff" stroke-width="6">
+    <path d="M288 160V864 M512 160V864 M736 160V864"/>
+    <path d="M336 224H864 M560 448H864 M784 672H864"/>
+  </g>
+
+  <!-- 轨迹（白色圆帽、圆角） -->
+  <path d="M220 720 C340 620, 400 540, 420 460 S520 300, 600 340 S740 520, 800 520"
+        fill="none" stroke="#fff" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"
+        filter="url(#thinShadow)" opacity="0.96"/>
+
+  <!-- 轨迹节点 -->
+  <g filter="url(#softShadow)">
+    <circle cx="220" cy="720" r="22" fill="url(#accent)" stroke="#fff" stroke-width="10"/>
+    <circle cx="420" cy="460" r="18" fill="url(#accent)" stroke="#fff" stroke-width="8"/>
+    <circle cx="800" cy="520" r="20" fill="url(#accent)" stroke="#fff" stroke-width="9"/>
+  </g>
+
+  <!-- 定位图钉 -->
+  <g transform="translate(600,340)" filter="url(#softShadow)">
+    <path d="M0,-88 C-70,-88 -112,-36 -112,24 C-112,92 -24,162 -4,198 C-2,202 2,202 4,198
+             C24,162 112,92 112,24 C112,-36 70,-88 0,-88 Z" fill="#fff"/>
+    <circle cx="0" cy="24" r="48" fill="url(#accent)" stroke="#fff" stroke-width="10"/>
+    <circle cx="0" cy="24" r="70" fill="none" stroke="#fff" stroke-opacity="0.28" stroke-width="8"/>
+  </g>
+
+  <!-- 角标小闪光 -->
+  <path d="M844 252 l14 -34 l14 34 l34 14 l-34 14 l-14 34 l-14 -34 l-34 -14 z"
+        fill="#fff" opacity="0.85"/>
+
+  <!-- 底部微弱高光 -->
+  <ellipse cx="512" cy="820" rx="300" ry="40" fill="#fff" opacity="0.08"/>
+
+  <!-- ================= 设计化字标：TraceMap ================= -->
+  <!-- 基础字形（白色 + 深色描边 + 阴影），保证可读性 -->
+  <g id="wordmark" filter="url(#softShadow)">
+    <text id="wordTextBase"
+          x="512" y="900" text-anchor="middle"
+          font-family="Inter, SF Pro Display, Segoe UI, -apple-system, system-ui, Arial, sans-serif"
+          font-size="136" font-weight="900" letter-spacing="0.5"
+          style="paint-order: stroke fill; stroke:#0b1220; stroke-opacity:0.22; stroke-width:12;">
+      <tspan fill="#ffffff">Trace</tspan>
+      <tspan dx="10" fill="url(#wordGrad)">Map</tspan>
+    </text>
+
+    <!-- 用同样的文字做裁剪区：在字内“镶嵌”一条轨迹切带 -->
+    <clipPath id="clipWord">
+      <text x="512" y="900" text-anchor="middle"
+            font-family="Inter, SF Pro Display, Segoe UI, -apple-system, system-ui, Arial, sans-serif"
+            font-size="136" font-weight="900" letter-spacing="0.5">TraceMap</text>
+    </clipPath>
+
+    <!-- 轨迹切带（仅显示在字形内部） -->
+    <g clip-path="url(#clipWord)">
+      <!-- 弧形轨迹（白色），略带透明，呼应图标主轨迹 -->
+      <path d="M220 872 C360 848, 664 848, 804 872"
+            fill="none" stroke="#ffffff" stroke-width="22" stroke-linecap="round" opacity="0.85"/>
+      <!-- 轨迹上的小节点（随字形裁剪） -->
+      <circle cx="340" cy="862" r="10" fill="url(#accent)"/>
+      <circle cx="684" cy="858" r="10" fill="url(#accent)"/>
+    </g>
+
+    <!-- 字标下方的外部轨迹下划线（不裁剪），加强呼应 -->
+    <path d="M260 936 C420 908, 604 908, 764 936"
+          fill="none" stroke="url(#accent)" stroke-width="14" stroke-linecap="round" opacity="0.95"/>
+    <!-- 下划线上的节点（完整可见） -->
+    <g>
+      <circle cx="312" cy="926" r="12" fill="#fff" stroke="url(#accent)" stroke-width="6"/>
+      <circle cx="712" cy="922" r="12" fill="#fff" stroke="url(#accent)" stroke-width="6"/>
+    </g>
+  </g>
+  <!-- ================= 设计化字标结束 ================= -->
+</svg>

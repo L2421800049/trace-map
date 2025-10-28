@@ -23,6 +23,7 @@ abstract class AppStateBase extends ChangeNotifier {
   UnmodifiableListView<MapLogEntry> get mapLogs;
   String? get tencentMapKey;
   UnmodifiableListView<TrackRecord> get trackRecords;
+  String? get customLogoUrl;
 
   Future<void> collectNow();
   Future<void> updateSamplingInterval(int seconds);
@@ -34,6 +35,7 @@ abstract class AppStateBase extends ChangeNotifier {
   Future<TrackRecord?> saveCurrentTrackRecord();
   Future<void> refreshTrackRecords();
   Future<void> updateTencentMapKey(String? key);
+  Future<void> updateCustomLogoUrl(String? url);
 }
 
 class AppState extends AppStateBase {
@@ -45,13 +47,15 @@ class AppState extends AppStateBase {
     required int retentionDays,
     required MapProvider mapProvider,
     required String? tencentMapKey,
+    required String? customLogoUrl,
   }) : _settingsStore = settingsStore,
        _trackRepository = trackRepository,
        _deviceRepository = deviceRepository,
        _samplingIntervalSeconds = samplingIntervalSeconds,
        _retentionDays = retentionDays,
        _mapProvider = mapProvider,
-       _tencentMapKey = tencentMapKey;
+       _tencentMapKey = tencentMapKey,
+       _customLogoUrl = customLogoUrl;
 
   final SettingsStore _settingsStore;
   final TrackRepository _trackRepository;
@@ -67,6 +71,7 @@ class AppState extends AppStateBase {
   MapProvider _mapProvider;
   List<MapLogEntry> _mapLogs = const [];
   String? _tencentMapKey;
+  String? _customLogoUrl;
   List<TrackRecord> _trackRecords = const [];
 
   static const _tencentKeySetting = 'tencent_map_key';
@@ -85,6 +90,7 @@ class AppState extends AppStateBase {
       await settingsStore.readMapProvider(),
     );
     final tencentKey = await trackRepository.readSetting(_tencentKeySetting);
+    final customLogoUrl = await settingsStore.readCustomLogoUrl();
 
     final state = AppState._(
       settingsStore: settingsStore,
@@ -94,6 +100,7 @@ class AppState extends AppStateBase {
       retentionDays: retentionDays,
       mapProvider: mapProvider,
       tencentMapKey: tencentKey,
+      customLogoUrl: customLogoUrl,
     );
 
     state._mapLogs = await trackRepository.fetchMapLogs();
@@ -219,6 +226,9 @@ class AppState extends AppStateBase {
       UnmodifiableListView(_trackRecords);
 
   @override
+  String? get customLogoUrl => _customLogoUrl;
+
+  @override
   UnmodifiableListView<MapLogEntry> get mapLogs =>
       UnmodifiableListView(_mapLogs);
 
@@ -284,6 +294,14 @@ class AppState extends AppStateBase {
   @override
   Future<void> refreshTrackRecords() async {
     _trackRecords = await _trackRepository.fetchTrackRecords();
+    notifyListeners();
+  }
+
+  @override
+  Future<void> updateCustomLogoUrl(String? url) async {
+    final trimmed = url?.trim();
+    _customLogoUrl = trimmed?.isEmpty ?? true ? null : trimmed;
+    await _settingsStore.writeCustomLogoUrl(_customLogoUrl);
     notifyListeners();
   }
 

@@ -10,6 +10,7 @@ import '../../core/models/map_log_entry.dart';
 import '../../core/models/map_provider.dart';
 import '../../core/utils/formatting.dart';
 import '../app_state_scope.dart';
+import '../widgets/app_logo_avatar.dart';
 import 'log_viewer_page.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -73,7 +74,13 @@ class _SettingsPageState extends State<SettingsPage> {
     final bool hasLogs = mapLogs.isNotEmpty;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('配置')),
+      appBar: AppBar(
+        leading: const Padding(
+          padding: EdgeInsets.only(left: 12),
+          child: AppLogoAvatar(size: 32),
+        ),
+        title: const Text('配置'),
+      ),
       body: Padding(
         padding: const EdgeInsets.all(24),
         child: SingleChildScrollView(
@@ -131,6 +138,8 @@ class _SettingsPageState extends State<SettingsPage> {
                   ),
                 ),
               ],
+              const SizedBox(height: 24),
+              _buildLogoCard(appState),
               const SizedBox(height: 28),
               FilledButton.icon(
                 onPressed: _saving
@@ -210,6 +219,124 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
       ),
     );
+  }
+
+  Widget _buildLogoCard(AppStateBase appState) {
+    final customLogo = appState.customLogoUrl;
+    final description = customLogo == null || customLogo.isEmpty
+        ? '当前使用内置 Logo'
+        : '自定义 Logo：$customLogo';
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('应用 Logo', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 16),
+            Center(
+              child: SizedBox(
+                width: 120,
+                height: 120,
+                child: AppLogoAvatar(size: 120),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(description, style: Theme.of(context).textTheme.bodySmall),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => _promptChangeLogo(appState),
+                  icon: const Icon(Icons.image_outlined),
+                  label: const Text('更换 Logo'),
+                ),
+                if (customLogo != null && customLogo.isNotEmpty)
+                  TextButton.icon(
+                    onPressed: () async {
+                      await appState.updateCustomLogoUrl(null);
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('已恢复默认 Logo')),
+                        );
+                      }
+                    },
+                    icon: const Icon(Icons.restore_outlined),
+                    label: const Text('恢复默认'),
+                  ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _promptChangeLogo(AppStateBase appState) async {
+    final controller = TextEditingController(
+      text: appState.customLogoUrl ?? '',
+    );
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: const Text('设置应用 Logo'),
+          content: TextField(
+            controller: controller,
+            decoration: const InputDecoration(
+              labelText: '图片地址 (http/https)',
+              hintText: '例如：https://example.com/logo.png',
+            ),
+            keyboardType: TextInputType.url,
+            autofocus: true,
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('取消'),
+            ),
+            FilledButton(
+              onPressed: () =>
+                  Navigator.of(context).pop(controller.text.trim()),
+              child: const Text('保存'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (result == null) {
+      return;
+    }
+
+    final trimmed = result.trim();
+    if (trimmed.isEmpty) {
+      await appState.updateCustomLogoUrl(null);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('已恢复默认 Logo')));
+      }
+      return;
+    }
+
+    if (!trimmed.startsWith('http://') && !trimmed.startsWith('https://')) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请输入 http 或 https 开头的图片地址')),
+        );
+      }
+      return;
+    }
+
+    await appState.updateCustomLogoUrl(trimmed);
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Logo 已更新')));
+    }
   }
 
   Future<void> _saveSettings(AppStateBase appState) async {

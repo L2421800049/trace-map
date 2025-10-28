@@ -4,6 +4,7 @@ import '../../core/app_state.dart';
 import '../../core/models/device_snapshot.dart';
 import '../../core/utils/formatting.dart';
 import '../app_state_scope.dart';
+import '../widgets/app_logo_avatar.dart';
 
 class DeviceInfoPage extends StatelessWidget {
   const DeviceInfoPage({super.key});
@@ -16,6 +17,10 @@ class DeviceInfoPage extends StatelessWidget {
         final isLoading = appState.isCollecting && snapshot == null;
         return Scaffold(
           appBar: AppBar(
+            leading: const Padding(
+              padding: EdgeInsets.only(left: 12),
+              child: AppLogoAvatar(size: 32),
+            ),
             title: const Text('设备信息与采集状态'),
             actions: [
               IconButton(
@@ -38,26 +43,26 @@ class DeviceInfoPage extends StatelessWidget {
           body: isLoading
               ? const _CenteredProgress()
               : snapshot == null
-                  ? _EmptyState(
-                      onRetry: appState.collectNow,
-                      interval: appState.samplingIntervalSeconds,
-                    )
-                  : RefreshIndicator(
-                      onRefresh: appState.collectNow,
-                      child: ListView(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 32,
-                        ),
-                        children: [
-                          _buildStatusCard(appState),
-                          const SizedBox(height: 24),
-                          _buildDeviceCard(snapshot),
-                          const SizedBox(height: 24),
-                          _buildLocationCard(snapshot),
-                        ],
-                      ),
+              ? _EmptyState(
+                  onRetry: appState.collectNow,
+                  interval: appState.samplingIntervalSeconds,
+                )
+              : RefreshIndicator(
+                  onRefresh: appState.collectNow,
+                  child: ListView(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 32,
                     ),
+                    children: [
+                      _buildStatusCard(appState),
+                      const SizedBox(height: 24),
+                      _buildDeviceCard(snapshot),
+                      const SizedBox(height: 24),
+                      _buildLocationCard(snapshot),
+                    ],
+                  ),
+                ),
         );
       },
     );
@@ -67,7 +72,7 @@ class DeviceInfoPage extends StatelessWidget {
     final snapshot = appState.latestSnapshot;
     final locationInfo = snapshot?.position != null
         ? '纬度: ${snapshot!.position!.latitude.toStringAsFixed(6)}\n'
-            '经度: ${snapshot.position!.longitude.toStringAsFixed(6)}'
+              '经度: ${snapshot.position!.longitude.toStringAsFixed(6)}'
         : snapshot?.locationError ?? '暂无定位数据';
 
     return Card(
@@ -89,24 +94,15 @@ class DeviceInfoPage extends StatelessWidget {
               label: '采集周期',
               value: '${appState.samplingIntervalSeconds} 秒',
             ),
-            _InfoRow(
-              label: '保存时长',
-              value: '${appState.retentionDays} 天',
-            ),
-            _InfoRow(
-              label: '当前记录数',
-              value: '${appState.samples.length}',
-            ),
+            _InfoRow(label: '保存时长', value: '${appState.retentionDays} 天'),
+            _InfoRow(label: '当前记录数', value: '${appState.samples.length}'),
             if (snapshot != null)
               _InfoRow(
                 label: '最新采集时间',
                 value: formatTimestamp(snapshot.retrievedAt),
               ),
             const SizedBox(height: 12),
-            SelectableText(
-              locationInfo,
-              style: const TextStyle(fontSize: 14),
-            ),
+            SelectableText(locationInfo, style: const TextStyle(fontSize: 14)),
           ],
         ),
       ),
@@ -133,10 +129,7 @@ class DeviceInfoPage extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 12),
-            SelectableText(
-              deviceLines,
-              style: const TextStyle(fontSize: 15),
-            ),
+            SelectableText(deviceLines, style: const TextStyle(fontSize: 15)),
           ],
         ),
       ),
@@ -188,10 +181,7 @@ class _EmptyState extends StatelessWidget {
           children: [
             const Icon(Icons.location_searching, size: 64),
             const SizedBox(height: 16),
-            Text(
-              '尚未采集到数据，将在 $interval 秒后自动尝试。',
-              textAlign: TextAlign.center,
-            ),
+            Text('尚未采集到数据，将在 $interval 秒后自动尝试。', textAlign: TextAlign.center),
             const SizedBox(height: 24),
             FilledButton.icon(
               onPressed: onRetry,
@@ -222,15 +212,12 @@ class _InfoRow extends StatelessWidget {
             width: 110,
             child: Text(
               label,
-              style: textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+              style: textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
-          Expanded(
-            child: Text(
-              value,
-              style: textTheme.bodyMedium,
-            ),
-          ),
+          Expanded(child: Text(value, style: textTheme.bodyMedium)),
         ],
       ),
     );

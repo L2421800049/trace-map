@@ -5,6 +5,7 @@ import 'package:latlong2/latlong.dart';
 import '../../core/models/track_record.dart';
 import '../../core/utils/formatting.dart';
 import '../app_state_scope.dart';
+import '../widgets/app_logo_avatar.dart';
 
 class TrackRecordsPage extends StatelessWidget {
   const TrackRecordsPage({super.key});
@@ -15,7 +16,13 @@ class TrackRecordsPage extends StatelessWidget {
       builder: (context, state) {
         final records = state.trackRecords;
         return Scaffold(
-          appBar: AppBar(title: const Text('轨迹记录')),
+          appBar: AppBar(
+            leading: const Padding(
+              padding: EdgeInsets.only(left: 12),
+              child: AppLogoAvatar(size: 32),
+            ),
+            title: const Text('轨迹记录'),
+          ),
           body: records.isEmpty
               ? const _EmptyRecords()
               : RefreshIndicator(

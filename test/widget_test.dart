@@ -83,6 +83,7 @@ class FakeAppState extends AppStateBase {
   MapProvider _mapProvider = MapProvider.defaultMap;
   List<MapLogEntry> _mapLogs = const [];
   String? _tencentMapKey;
+  String? _customLogoUrl;
   final List<TrackRecord> _trackRecords = const [];
 
   @override
@@ -114,6 +115,9 @@ class FakeAppState extends AppStateBase {
   @override
   UnmodifiableListView<TrackRecord> get trackRecords =>
       UnmodifiableListView(_trackRecords);
+
+  @override
+  String? get customLogoUrl => _customLogoUrl;
 
   @override
   Future<void> collectNow() async {
@@ -171,4 +175,10 @@ class FakeAppState extends AppStateBase {
 
   @override
   Future<void> refreshTrackRecords() async {}
+
+  @override
+  Future<void> updateCustomLogoUrl(String? url) async {
+    _customLogoUrl = url;
+    notifyListeners();
+  }
 }

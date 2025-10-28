@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../core/models/map_log_entry.dart';
 import '../../core/utils/formatting.dart';
 import '../app_state_scope.dart';
+import '../widgets/app_logo_avatar.dart';
 
 class LogViewerPage extends StatelessWidget {
   const LogViewerPage({super.key});
@@ -14,6 +15,10 @@ class LogViewerPage extends StatelessWidget {
         final logs = state.mapLogs;
         return Scaffold(
           appBar: AppBar(
+            leading: const Padding(
+              padding: EdgeInsets.only(left: 12),
+              child: AppLogoAvatar(size: 32),
+            ),
             title: const Text('地图日志'),
             actions: [
               if (logs.isNotEmpty)

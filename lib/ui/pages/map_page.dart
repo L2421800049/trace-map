@@ -13,6 +13,7 @@ import '../../core/utils/coordinate_transform.dart';
 import '../../core/utils/formatting.dart';
 import 'settings_page.dart';
 import 'track_records_page.dart';
+import '../widgets/app_logo_avatar.dart';
 import '../app_state_scope.dart';
 
 const _tencentMapBaseUrl = 'https://tencent-map.flutter-app.local/';
@@ -35,7 +36,13 @@ class _MapPageState extends State<MapPage> {
         final tencentKey = appState.tencentMapKey;
 
         return Scaffold(
-          appBar: AppBar(title: const Text('轨迹地图')),
+          appBar: AppBar(
+            leading: const Padding(
+              padding: EdgeInsets.only(left: 12),
+              child: AppLogoAvatar(size: 32),
+            ),
+            title: const Text('轨迹地图'),
+          ),
           body: samples.isEmpty
               ? const _EmptyMapState()
               : Column(
@@ -81,13 +88,14 @@ class _MapPageState extends State<MapPage> {
                                 onPressed: samples.isEmpty || _savingTrack
                                     ? null
                                     : () async {
-                                        final messenger =
-                                            ScaffoldMessenger.of(context);
+                                        final messenger = ScaffoldMessenger.of(
+                                          context,
+                                        );
                                         setState(() => _savingTrack = true);
                                         late String feedback;
                                         try {
-                                          final record =
-                                              await appState.saveCurrentTrackRecord();
+                                          final record = await appState
+                                              .saveCurrentTrackRecord();
                                           feedback = record != null
                                               ? '已保存轨迹：${record.title}'
                                               : '当前没有可保存的轨迹数据';
